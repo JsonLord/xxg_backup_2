@@ -590,6 +590,10 @@ def start_and_monitor_sessions(personas, tasks, url):
     repo_name = "JsonLord/tiny_web"
     branch_name = "main"
 
+    if not personas or not tasks:
+        yield "Error: Personas or Tasks missing. Please generate them first.", "", ""
+        return
+
     if not ANALYSIS_API_KEY:
         yield "Error: Analysis API key not set.", "", ""
         return
