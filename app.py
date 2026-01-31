@@ -94,6 +94,8 @@ if os.path.exists("external/TinyTroupe"):
 
 import gradio as gr
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 import uvicorn
 from github import Github, Auth
 import requests
@@ -131,6 +133,10 @@ POOL_PATH = "PersonaPool"
 processed_prs = set()
 all_discovered_reports = ""
 github_logs = []
+
+# Slide rendering configuration
+SLIDES_OUTPUT_ROOT = os.path.join(os.getcwd(), "rendered_slides_output")
+os.makedirs(SLIDES_OUTPUT_ROOT, exist_ok=True)
 
 def add_log(message):
     timestamp = datetime.now().strftime("%H:%M:%S")
@@ -701,6 +707,12 @@ def get_reports_in_branch(repo_full_name, branch_name, filter_type=None):
                 if path not in reports:
                     reports.append(path)
         
+        # Filter out individual slides if they are inside a slides folder
+        if filter_type == "slides":
+            folders = [r for r in reports if not r.endswith(".md")]
+            if folders:
+                reports = [r for r in reports if not any(r.startswith(f + "/") for f in folders)]
+
         # Sort by relevance
         def sort_key(path):
             p_lower = path.lower()
@@ -723,7 +735,7 @@ def get_reports_in_branch(repo_full_name, branch_name, filter_type=None):
 
         reports.sort(key=sort_key)
         
-        add_log(f"Discovered {len(reports)} potential Markdown files.")
+        add_log(f"Discovered {len(reports)} entries.")
         return reports
     except Exception as e:
         add_log(f"Error fetching reports in branch {branch_name}: {e}")
@@ -795,19 +807,15 @@ def render_slides(repo_full_name, branch_name, report_path):
         repo = gh.get_repo(repo_full_name)
         content = None
         
-        # Method 1: Check for multi-file slides folder
-        # We check this first if the report_path is in user_experience_reports or if it's default
-        if "user_experience_reports" in report_path:
-            # If the user selected the folder itself or a file within a folder that has a slides subfolder
-            if report_path.endswith("/slides") or report_path.endswith("/slides/"):
-                slides_folder = report_path
-            else:
-                slides_folder = "user_experience_reports/slides"
+        # Check if the path is a directory or points to a slide folder
+        is_slides_dir = report_path.endswith("/slides") or report_path.endswith("/slides/")
 
+        if is_slides_dir or "user_experience_reports/slides" in report_path:
+            slides_folder = report_path if is_slides_dir else "user_experience_reports/slides"
             try:
                 folder_contents = repo.get_contents(slides_folder, ref=branch_name)
                 if isinstance(folder_contents, list):
-                    add_log(f"Multi-file slides folder found in branch {branch_name}. Merging...")
+                    add_log(f"Merging multi-file slides from {slides_folder} in branch {branch_name}...")
                     slide_files = [c for c in folder_contents if c.name.endswith(".md")]
                     slide_files.sort(key=lambda x: x.name)
                     
@@ -821,68 +829,40 @@ def render_slides(repo_full_name, branch_name, report_path):
                     
                     content = merged_content
                     add_log(f"Successfully merged {len(slide_files)} slides.")
-            except:
-                pass
+            except Exception as e:
+                add_log(f"Failed to fetch slides from folder: {e}")
 
         if content is None:
-            # Method 2: Single file logic (legacy/fallback)
-            # Determine slides path
-            if "slide" in report_path.lower():
-                slides_path = report_path
-            elif report_path == "user_experience_reports/report.md":
-                slides_path = "user_experience_reports/slides.md"
-            else:
-                # Try to map report_ID.md to slides_ID.md
-                slides_path = report_path.replace("report_", "slides_")
-                if slides_path == report_path: # No replacement happened
-                     slides_path = "user_experience_reports/slides.md" # fallback
-
-            add_log(f"Attempting to fetch single-file slides from branch '{branch_name}' at path: {slides_path}")
-
+            # Fallback to single file logic
+            add_log(f"Attempting to fetch single-file slides from branch '{branch_name}' at path: {report_path}")
             try:
-                file_content = repo.get_contents(slides_path, ref=branch_name)
+                file_content = repo.get_contents(report_path, ref=branch_name)
                 content = file_content.decoded_content.decode("utf-8")
             except Exception as e:
-                if "404" in str(e):
-                    add_log(f"Slides file not found at {slides_path}. Attempting fallback...")
-                    # Last resort fallback: look for any .md file with 'slides' in the name in the same branch
-                    reports = get_reports_in_branch(repo_full_name, branch_name)
-                    slides_files = [r for r in reports if "slide" in r.lower() and "/slides/" not in r]
-                    if slides_files:
-                        slides_path = slides_files[0]
-                        add_log(f"Found alternative slides file: {slides_path}")
-                        file_content = repo.get_contents(slides_path, ref=branch_name)
-                        content = file_content.decoded_content.decode("utf-8")
-                    else:
-                        return f"Error: File '{slides_path}' not found in branch '{branch_name}'. No other slide files discovered."
-                else:
-                    add_log(f"Error fetching slides: {e}")
-                    return f"Error fetching slides: {str(e)}"
+                return f"Error fetching slides: {str(e)}"
             
-        # Prepare workspace
-        report_id = str(uuid.uuid4())[:8]
-        work_dir = f"slides_work_{report_id}"
+        # Generate a unique ID for this rendering
+        render_id = str(uuid.uuid4())[:8]
+        work_dir = f"slides_work_{render_id}"
         os.makedirs(work_dir, exist_ok=True)
-        with open(f"{work_dir}/index.md", "w") as f:
+        with open(os.path.join(work_dir, "index.md"), "w") as f:
             f.write(content)
         
-        # Run mkslides
-        output_dir = f"slides_site_{report_id}"
-        # Ensure we have a clean output dir
-        if os.path.exists(output_dir):
-            shutil.rmtree(output_dir)
+        # Set output directory in the SLIDES_OUTPUT_ROOT
+        site_name = f"site_{render_id}"
+        output_dir = os.path.join(SLIDES_OUTPUT_ROOT, site_name)
             
         subprocess.run(["mkslides", "build", work_dir, "--site-dir", output_dir])
         
-        if os.path.exists(f"{output_dir}/index.html"):
-            # Return IFrame pointing to the generated site. 
-            # Use absolute path with 'file/' prefix which is robust in Gradio 4+
-            abspath = os.path.abspath(f"{output_dir}/index.html")
-            add_log(f"Slides rendered successfully: {abspath}")
+        # Cleanup work dir
+        shutil.rmtree(work_dir)
 
-            return f'<iframe src="/file={abspath}" width="100%" height="600px" frameborder="0"></iframe>'
+        if os.path.exists(os.path.join(output_dir, "index.html")):
+            # Return IFrame pointing to the static route
+            add_log(f"Slides rendered successfully in {site_name}")
+            return f'<iframe src="/static_slides/{site_name}/index.html" width="100%" height="600px" frameborder="0"></iframe>'
         else:
-            add_log(f"ERROR: mkslides finished but {output_dir}/index.html not found.")
+            add_log(f"ERROR: mkslides finished but index.html not found.")
             return "Failed to render slides: index.html not found."
             
     except Exception as e:
@@ -1012,6 +992,7 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
             def sl_auto_render(repo, branch):
                 reports = get_reports_in_branch(repo, branch, filter_type="slides")
                 default_val = None
+                # Prioritize the standard slides folder
                 if "user_experience_reports/slides" in reports:
                     default_val = "user_experience_reports/slides"
                 elif reports:
@@ -1190,6 +1171,9 @@ if __name__ == "__main__":
     @fastapi_app.get("/api/info")
     def info():
         return {"app": "UX Analysis Orchestrator", "version": "1.0.0"}
+
+    # Mount static files for slides
+    fastapi_app.mount("/static_slides", StaticFiles(directory=SLIDES_OUTPUT_ROOT), name="static_slides")
 
     # Mount Gradio
     # Restrict allowed_paths for better security
