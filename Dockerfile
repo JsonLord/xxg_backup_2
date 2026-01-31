@@ -24,6 +24,13 @@ RUN pip install --no-cache-dir uv
 COPY requirements.txt .
 RUN uv pip install --system --no-cache -r requirements.txt
 
+# Pre-clone and pre-install external dependencies
+RUN mkdir -p /app/external
+RUN git clone -b fix/jules-final-submission-branch https://github.com/JsonLord/TinyTroupe.git /app/external/TinyTroupe
+RUN git clone --recursive https://github.com/MartenBE/mkslides.git /app/external/mkslides
+RUN sed -i 's/requires-python = ">=3.13"/requires-python = ">=3.12"/' /app/external/mkslides/pyproject.toml
+RUN uv pip install --system /app/external/mkslides
+
 # Copy the rest of the application
 COPY . .
 

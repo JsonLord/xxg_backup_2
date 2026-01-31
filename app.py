@@ -10,26 +10,9 @@ import shutil
 from gradio_client import Client
 from datetime import datetime
 
-# Logic to clone TinyTroupe on startup if not present
-def clone_tinytroupe():
-    if not os.path.exists("external/TinyTroupe"):
-        print("Cloning TinyTroupe...")
-        os.makedirs("external", exist_ok=True)
-        res = subprocess.run([
-            "git", "clone", "-b", "fix/final-submission-branch",
-            "https://github.com/JsonLord/TinyTroupe.git", "external/TinyTroupe"
-        ])
-        if res.returncode != 0:
-            print("Fallback: Cloning main branch of TinyTroupe...")
-            subprocess.run([
-                "git", "clone",
-                "https://github.com/JsonLord/TinyTroupe.git", "external/TinyTroupe"
-            ])
-        patch_tinytroupe()
-    else:
-        print("TinyTroupe already present.")
-        patch_tinytroupe()
-
+# TinyTroupe and mkslides are now pre-cloned and pre-installed in Dockerfile:
+# git clone -b fix/jules-final-submission-branch https://github.com/JsonLord/TinyTroupe.git external/TinyTroupe
+# We only keep the patching logic if needed, or ensure it's done during build
 def patch_tinytroupe():
     path = "external/TinyTroupe/tinytroupe/openai_utils.py"
     if os.path.exists(path):
@@ -106,39 +89,8 @@ def patch_tinytroupe():
             f.write(content)
         print("TinyTroupe patched to handle 502 errors with 35s wait and parallel retries.")
 
-clone_tinytroupe()
-
-def setup_mkslides():
-    if not os.path.exists("external/mkslides"):
-        print("Cloning mkslides...")
-        os.makedirs("external", exist_ok=True)
-        subprocess.run([
-            "git", "clone", "--recursive",
-            "https://github.com/MartenBE/mkslides.git", "external/mkslides"
-        ])
-        # Patch pyproject.toml to allow Python 3.12
-        pyproject_path = "external/mkslides/pyproject.toml"
-        if os.path.exists(pyproject_path):
-            with open(pyproject_path, "r") as f:
-                content = f.read()
-            content = content.replace('requires-python = ">=3.13"', 'requires-python = ">=3.12"')
-            with open(pyproject_path, "w") as f:
-                f.write(content)
-        
-        # Install dependencies and mkslides
-        subprocess.run(["pip", "install", "./external/mkslides"])
-    else:
-        print("mkslides directory already present. Ensuring it is installed...")
-        subprocess.run(["pip", "install", "./external/mkslides"])
-
-    # Verify installation
-    res = subprocess.run(["which", "mkslides"], capture_output=True, text=True)
-    if res.returncode == 0:
-        print(f"mkslides verified at: {res.stdout.strip()}")
-    else:
-        print("WARNING: mkslides CLI not found in PATH after installation.")
-
-setup_mkslides()
+if os.path.exists("external/TinyTroupe"):
+    patch_tinytroupe()
 
 import gradio as gr
 from fastapi import FastAPI
@@ -928,7 +880,7 @@ def render_slides(repo_full_name, branch_name, report_path):
             abspath = os.path.abspath(f"{output_dir}/index.html")
             add_log(f"Slides rendered successfully: {abspath}")
 
-            return f'<iframe src="file/{abspath}" width="100%" height="600px" frameborder="0"></iframe>'
+            return f'<iframe src="/file={abspath}" width="100%" height="600px" frameborder="0"></iframe>'
         else:
             add_log(f"ERROR: mkslides finished but {output_dir}/index.html not found.")
             return "Failed to render slides: index.html not found."
@@ -1185,6 +1137,10 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
             timer.tick(fn=monitor_and_log, outputs=[global_feed, live_log])
             refresh_feed_btn.click(fn=monitor_and_log, outputs=[global_feed, live_log])
 
+        with gr.Tab("Alternative Styling"):
+            gr.Markdown("### Design Automation & Iteration")
+            gr.Markdown("We are working with the team behind https://github.com/onlook-dev/onlook to automate fast design iterations based on the user test reports. Stay updated on changes to the Github Page by following it.")
+
     # Event handlers
     generate_btn.click(
         fn=handle_generate,
@@ -1236,8 +1192,8 @@ if __name__ == "__main__":
         return {"app": "UX Analysis Orchestrator", "version": "1.0.0"}
 
     # Mount Gradio
-    # Allow root to be extra permissive for file serving on HF Spaces
-    demo_app = gr.mount_gradio_app(fastapi_app, demo, path="/", allowed_paths=["/"])
+    # Restrict allowed_paths for better security
+    demo_app = gr.mount_gradio_app(fastapi_app, demo, path="/", allowed_paths=["/app"])
 
     # Run uvicorn
     uvicorn.run(demo_app, host="0.0.0.0", port=7860)

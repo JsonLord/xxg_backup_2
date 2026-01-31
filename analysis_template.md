@@ -27,7 +27,7 @@ You will simulate a persona performing tasks, but the final output must read lik
 Clone TinyTroupe:
 
 ```bash
-git clone -b fix/final-submission-branch https://github.com/JsonLord/TinyTroupe.git external/TinyTroupe
+git clone -b fix/jules-final-submission-branch https://github.com/JsonLord/TinyTroupe.git external/TinyTroupe
 ````
 
 Set environment variables:
