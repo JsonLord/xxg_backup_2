@@ -65,15 +65,16 @@ def patch_tinytroupe():
         content = content.replace("i = 0", "parallel_retry = False\n        i = 0")
 
         # Modify the model call inside the loop
-        old_call = "response = self._raw_model_call(model, chat_api_params)"
-        new_call = """if parallel_retry:
+        if 'if parallel_retry:' not in content:
+            old_call = "response = self._raw_model_call(model, chat_api_params)"
+            new_call = """if parallel_retry:
                         logger.info("Attempting parallel call to alias-large and alias-huge.")
                         response = self._raw_model_call_parallel(["alias-large", "alias-huge"], chat_api_params)
                         if isinstance(response, Exception):
                             raise response
                     else:
                         response = self._raw_model_call(model, chat_api_params)"""
-        content = content.replace(old_call, new_call)
+            content = content.replace(old_call, new_call)
 
         # Update the 502 catch block
         pattern = r"if isinstance\(e, openai\.APIStatusError\) and e\.status_code == 502 and isinstance\(self, HelmholtzBlabladorClient\):.*?except Exception as fallback_e:.*?logger\.error\(f\"Fallback to OpenAI also failed: \{fallback_e\}\"\)"
@@ -266,6 +267,17 @@ def get_persona_pool():
         print(f"Error fetching persona pool: {e}")
         return []
 
+def get_example_personas():
+    example_path = "external/TinyTroupe/examples/agents/"
+    if not os.path.exists(example_path):
+        return []
+    try:
+        files = [f for f in os.listdir(example_path) if f.endswith(".json")]
+        return sorted(files)
+    except Exception as e:
+        print(f"Error listing example personas: {e}")
+        return []
+
 def upload_persona_to_pool(persona_data):
     if not gh:
         return
@@ -286,7 +298,22 @@ def upload_persona_to_pool(persona_data):
     except Exception as e:
         print(f"Error uploading persona to pool: {e}")
 
-def select_or_create_personas(theme, customer_profile, num_personas, force_method=None):
+def select_or_create_personas(theme, customer_profile, num_personas, force_method=None, example_file=None):
+    if force_method == "Example Persona" and example_file:
+        add_log(f"Loading example persona from {example_file}...")
+        try:
+            with open(os.path.join("external/TinyTroupe/examples/agents/", example_file), "r") as f:
+                data = json.load(f)
+            # Adapt TinyTroupe format to our internal format
+            persona = {
+                "name": data.get("name", "Unknown"),
+                "minibio": data.get("mental_faculties", [{}])[0].get("context", "An example persona.") if "mental_faculties" in data else "An example persona.",
+                "persona": data
+            }
+            return [persona] * int(num_personas)
+        except Exception as e:
+            add_log(f"Failed to load example persona: {e}")
+
     if force_method == "DeepPersona":
         add_log("Forcing DeepPersona generation...")
         personas = []
@@ -296,7 +323,6 @@ def select_or_create_personas(theme, customer_profile, num_personas, force_metho
         if len(personas) >= int(num_personas): return personas[:int(num_personas)]
         # fallback if some failed
         num_personas = int(num_personas) - len(personas)
-        final_personas_base = personas
     elif force_method == "TinyTroupe":
         add_log("Forcing TinyTroupe generation...")
         return generate_personas_from_tiny_factory(theme, customer_profile, num_personas)
@@ -599,13 +625,13 @@ def generate_tasks(theme, customer_profile):
 
     return [f"Task {i+1} for {theme} (Manual fallback)" for i in range(10)]
 
-def handle_generate(theme, customer_profile, num_personas, method):
+def handle_generate(theme, customer_profile, num_personas, method, example_file):
     try:
         yield "Generating tasks...", None, None
         tasks = generate_tasks(theme, customer_profile)
 
         yield "Selecting or creating personas...", tasks, None
-        personas = select_or_create_personas(theme, customer_profile, num_personas, force_method=method)
+        personas = select_or_create_personas(theme, customer_profile, num_personas, force_method=method, example_file=example_file)
 
         yield "Generation complete!", tasks, personas
     except Exception as e:
@@ -993,9 +1019,10 @@ def generate_full_ui_call(repo, branch, session_id, selected_solutions_json):
         return f"Error reading template: {e}"
 
     prompt = template.replace("{{selected_solutions}}", selected_solutions_json)
-    prompt = prompt.replace("{{url}}", "Original Target URL")
+    prompt = prompt.replace("{{url}}", "the analyzed website")
     prompt = prompt.replace("{{analysis_report}}", "See previous activities in this session")
     prompt = prompt.replace("{{report_id}}", session_id[:8])
+    prompt = prompt.replace("{{screenshots_dir}}", f"user_experience_reports/screenshots/{session_id[:8]}")
 
     headers = {
         "X-Goog-Api-Key": ANALYSIS_API_KEY,
@@ -1103,9 +1130,15 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
                     theme_input = gr.Textbox(label="Theme", placeholder="e.g., Communication, Purchase decisions, Information gathering")
                     profile_input = gr.Textbox(label="Customer Profile Description", placeholder="Describe the target customer...")
                     num_personas_input = gr.Number(label="Number of Personas", value=1, precision=0)
-                    persona_method = gr.Radio(["TinyTroupe", "DeepPersona"], label="Persona Generation Method", value="TinyTroupe")
+                    persona_method = gr.Radio(["Example Persona", "TinyTroupe", "DeepPersona"], label="Persona Generation Method", value="TinyTroupe")
+                    example_persona_select = gr.Dropdown(label="Select Example Persona", choices=get_example_personas(), visible=False)
                     url_input = gr.Textbox(label="Target URL", value="https://example.com")
                     generate_btn = gr.Button("Generate Personas & Tasks")
+
+                    def update_method_visibility(method):
+                        return gr.update(visible=(method == "Example Persona"))
+
+                    persona_method.change(fn=update_method_visibility, inputs=[persona_method], outputs=[example_persona_select])
 
                 with gr.Column():
                     status_output = gr.Textbox(label="Status", interactive=False)
@@ -1352,7 +1385,7 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
     # Event handlers
     generate_btn.click(
         fn=handle_generate,
-        inputs=[theme_input, profile_input, num_personas_input, persona_method],
+        inputs=[theme_input, profile_input, num_personas_input, persona_method, example_persona_select],
         outputs=[status_output, task_list_display, persona_display]
     )
 
