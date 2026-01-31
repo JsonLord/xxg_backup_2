@@ -1,6 +1,6 @@
 ---
-title: Xxg
-emoji: 🔥
+title: UX Analysis Orchestrator
+emoji: 📈
 colorFrom: blue
 colorTo: red
 sdk: docker

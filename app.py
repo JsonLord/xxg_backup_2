@@ -15,10 +15,16 @@ def clone_tinytroupe():
     if not os.path.exists("external/TinyTroupe"):
         print("Cloning TinyTroupe...")
         os.makedirs("external", exist_ok=True)
-        subprocess.run([
-            "git", "clone", "-b", "fix/jules-final-submission-branch",
+        res = subprocess.run([
+            "git", "clone", "-b", "fix/final-submission-branch",
             "https://github.com/JsonLord/TinyTroupe.git", "external/TinyTroupe"
         ])
+        if res.returncode != 0:
+            print("Fallback: Cloning main branch of TinyTroupe...")
+            subprocess.run([
+                "git", "clone",
+                "https://github.com/JsonLord/TinyTroupe.git", "external/TinyTroupe"
+            ])
         patch_tinytroupe()
     else:
         print("TinyTroupe already present.")
@@ -918,11 +924,11 @@ def render_slides(repo_full_name, branch_name, report_path):
         
         if os.path.exists(f"{output_dir}/index.html"):
             # Return IFrame pointing to the generated site. 
-            # Use standard Gradio 4 /file= format with absolute path
+            # Use absolute path with 'file/' prefix which is robust in Gradio 4+
             abspath = os.path.abspath(f"{output_dir}/index.html")
             add_log(f"Slides rendered successfully: {abspath}")
 
-            return f'<iframe src="/file={abspath}" width="100%" height="600px" frameborder="0"></iframe>'
+            return f'<iframe src="file/{abspath}" width="100%" height="600px" frameborder="0"></iframe>'
         else:
             add_log(f"ERROR: mkslides finished but {output_dir}/index.html not found.")
             return "Failed to render slides: index.html not found."
@@ -1051,14 +1057,26 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
                 latest = branches[0] if branches else "main"
                 return gr.update(choices=branches, value=latest)
 
-            def sl_update_reports(repo_name, branch_name):
-                reports = get_reports_in_branch(repo_name, branch_name, filter_type="slides")
+            def sl_auto_render(repo, branch):
+                reports = get_reports_in_branch(repo, branch, filter_type="slides")
                 default_val = None
                 if "user_experience_reports/slides" in reports:
                     default_val = "user_experience_reports/slides"
                 elif reports:
                     default_val = reports[0]
-                return gr.update(choices=reports, value=default_val), reports
+
+                html = ""
+                carousel_visible = gr.update(visible=False)
+                counter_text = "No slide decks discovered."
+                idx = 0
+
+                if default_val:
+                    html = render_slides(repo, branch, default_val)
+                    if len(reports) > 1:
+                        carousel_visible = gr.update(visible=True)
+                        counter_text = f"Deck 1 of {len(reports)}: {default_val}"
+
+                return gr.update(choices=reports, value=default_val), reports, html, carousel_visible, idx, counter_text
 
             sl_repo_select.change(fn=sl_update_branches, inputs=[sl_repo_select], outputs=[sl_branch_select])
 
@@ -1085,13 +1103,9 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
             sl_refresh_branches_btn.click(fn=sl_update_branches, inputs=[sl_repo_select], outputs=[sl_branch_select])
 
             sl_branch_select.change(
-                fn=sl_update_reports,
+                fn=sl_auto_render,
                 inputs=[sl_repo_select, sl_branch_select],
-                outputs=[sl_report_select, all_decks_state]
-            ).then(
-                fn=sl_render_wrapper,
-                inputs=[sl_repo_select, sl_branch_select, sl_report_select, sl_manual_path],
-                outputs=[slideshow_display, carousel_controls]
+                outputs=[sl_report_select, all_decks_state, slideshow_display, carousel_controls, current_deck_idx, deck_counter]
             )
 
             sl_report_select.change(
@@ -1222,7 +1236,8 @@ if __name__ == "__main__":
         return {"app": "UX Analysis Orchestrator", "version": "1.0.0"}
 
     # Mount Gradio
-    demo_app = gr.mount_gradio_app(fastapi_app, demo, path="/", allowed_paths=[os.getcwd(), os.path.abspath(os.getcwd())])
+    # Allow root to be extra permissive for file serving on HF Spaces
+    demo_app = gr.mount_gradio_app(fastapi_app, demo, path="/", allowed_paths=["/"])
 
     # Run uvicorn
     uvicorn.run(demo_app, host="0.0.0.0", port=7860)
