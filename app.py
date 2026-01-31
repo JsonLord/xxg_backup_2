@@ -291,14 +291,15 @@ def select_or_create_personas(theme, customer_profile, num_personas, force_metho
         add_log("Forcing DeepPersona generation...")
         personas = []
         for i in range(int(num_personas)):
-            p = generate_persona_from_endpoint(theme, customer_profile)
+            p = generate_persona_from_deeppersona(theme, customer_profile)
             if p: personas.append(p)
-        if len(personas) == int(num_personas): return personas
+        if len(personas) >= int(num_personas): return personas[:int(num_personas)]
         # fallback if some failed
         num_personas = int(num_personas) - len(personas)
+        final_personas_base = personas
     elif force_method == "TinyTroupe":
         add_log("Forcing TinyTroupe generation...")
-        return generate_personas(theme, customer_profile, num_personas)
+        return generate_personas_from_tiny_factory(theme, customer_profile, num_personas)
 
     client = get_blablador_client()
     if not client:
@@ -371,29 +372,30 @@ def select_or_create_personas(theme, customer_profile, num_personas, force_metho
 
     return final_personas
 
-def generate_persona_from_endpoint(theme, customer_profile):
+def generate_persona_from_deeppersona(theme, customer_profile):
     add_log("Attempting persona generation from THzva/deeppersona-experience...")
     client = get_blablador_client()
     if not client:
         return None
 
-    # Step 1: Breakdown profile into parameters using LLM
+    # Step 1: Breakdown profile into parameters using LLM alias-large
     prompt = f"""
-    Break down the following theme and customer profile into the specific attributes required for a detailed persona.
-    Theme: {theme}
-    Profile: {customer_profile}
+    You are an expert in persona creation.
+    Break down the following business theme and customer profile into detailed attributes for a persona.
+    Business Theme: {theme}
+    Target Customer Profile: {customer_profile}
 
-    Return a JSON object with the following fields:
-    - name (string, full name)
+    Return a JSON object with exactly these fields:
     - age (int)
     - gender (string)
     - occupation (string)
     - city (string)
     - country (string)
-    - custom_values (string, comma separated)
-    - custom_life_attitude (string)
+    - custom_values (string, e.g., "Sustainability, Innovation")
+    - custom_life_attitude (string, e.g., "Optimistic and forward-thinking")
     - life_story (string, a brief background)
     - interests_hobbies (string, comma separated)
+    - name (string, full name)
 
     CRITICAL: Return ONLY the JSON object.
     """
@@ -405,9 +407,9 @@ def generate_persona_from_endpoint(theme, customer_profile):
             response_format={"type": "json_object"}
         )
         params = json.loads(response.choices[0].message.content)
-        add_log(f"Profile breakdown complete for {params.get('occupation')}")
+        add_log(f"Profile breakdown complete for {params.get('name')}")
 
-        # Step 2: Call the new generation endpoint
+        # Step 2: Call the DeepPersona generation endpoint
         gr_client = Client("THzva/deeppersona-experience")
         result = gr_client.predict(
                 age=float(params.get("age", 30)),
@@ -423,7 +425,6 @@ def generate_persona_from_endpoint(theme, customer_profile):
                 api_name="/generate_persona"
         )
 
-        # Step 3: Use the name from params or result
         name = params.get("name")
         if not name:
             name_match = re.search(r"I am ([^,\.]+)", result)
@@ -435,22 +436,46 @@ def generate_persona_from_endpoint(theme, customer_profile):
             "persona": params
         }
     except Exception as e:
-        add_log(f"Endpoint generation failed: {e}")
+        add_log(f"DeepPersona generation failed: {e}")
         return None
+
+def generate_personas_from_tiny_factory(theme, customer_profile, num_personas):
+    add_log(f"Generating {num_personas} personas from harvesthealth/tiny_factory...")
+    try:
+        gr_client = Client("harvesthealth/tiny_factory")
+        result = gr_client.predict(
+            business_description=theme,
+            customer_profile=customer_profile,
+            num_personas=float(num_personas),
+            blablador_api_key=BLABLADOR_API_KEY,
+            api_name="/generate_personas"
+        )
+        # Assuming the result is a list of personas in the format we need
+        if isinstance(result, list):
+            return result
+        elif isinstance(result, dict) and "personas" in result:
+            return result["personas"]
+        else:
+            add_log(f"Unexpected format from tiny_factory: {type(result)}")
+            # If it's a string, maybe it's JSON?
+            if isinstance(result, str):
+                try:
+                    return json.loads(result)
+                except:
+                    pass
+            return []
+    except Exception as e:
+        add_log(f"Tiny Factory generation failed: {e}")
+        return []
 
 def generate_personas(theme, customer_profile, num_personas):
     add_log(f"Generating {num_personas} personas...")
     
-    # Try the new endpoint first
-    final_personas = []
-    for i in range(int(num_personas)):
-        p = generate_persona_from_endpoint(theme, customer_profile)
-        if p:
-            final_personas.append(p)
-    
-    if len(final_personas) == int(num_personas):
-        add_log("Successfully generated all personas from endpoint.")
-        return final_personas
+    # Try Tiny Factory first
+    final_personas = generate_personas_from_tiny_factory(theme, customer_profile, num_personas)
+    if len(final_personas) >= int(num_personas):
+        add_log("Successfully generated all personas from Tiny Factory.")
+        return final_personas[:int(num_personas)]
     
     add_log("Falling back to TinyTroupe logic for remaining personas...")
     
