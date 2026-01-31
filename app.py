@@ -122,7 +122,15 @@ def setup_mkslides():
         # Install dependencies and mkslides
         subprocess.run(["pip", "install", "./external/mkslides"])
     else:
-        print("mkslides already present.")
+        print("mkslides directory already present. Ensuring it is installed...")
+        subprocess.run(["pip", "install", "./external/mkslides"])
+
+    # Verify installation
+    res = subprocess.run(["which", "mkslides"], capture_output=True, text=True)
+    if res.returncode == 0:
+        print(f"mkslides verified at: {res.stdout.strip()}")
+    else:
+        print("WARNING: mkslides CLI not found in PATH after installation.")
 
 setup_mkslides()
 
@@ -689,6 +697,16 @@ def get_reports_in_branch(repo_full_name, branch_name, filter_type=None):
         
         # Method 1: Check user_experience_reports directory
         reports = []
+
+        # Check for merged slides folder first if we are looking for slides
+        if filter_type == "slides":
+            try:
+                repo.get_contents("user_experience_reports/slides", ref=branch_name)
+                reports.append("user_experience_reports/slides")
+                add_log("Detected 'user_experience_reports/slides' directory. Added as merged presentation option.")
+            except:
+                pass
+
         try:
             contents = repo.get_contents("user_experience_reports", ref=branch_name)
             for content_file in contents:
@@ -730,6 +748,7 @@ def get_reports_in_branch(repo_full_name, branch_name, filter_type=None):
             # Highest priority: specific report.md and slides.md in user_experience_reports
             if filter_type == "report" and p_lower == "user_experience_reports/report.md": score -= 1000
             if filter_type == "slides" and p_lower == "user_experience_reports/slides.md": score -= 1000
+            if filter_type == "slides" and p_lower == "user_experience_reports/slides": score -= 2000
             
             # High priority: other files in user_experience_reports
             if "user_experience_reports" in p_lower: score -= 100
@@ -819,7 +838,12 @@ def render_slides(repo_full_name, branch_name, report_path):
         # Method 1: Check for multi-file slides folder
         # We check this first if the report_path is in user_experience_reports or if it's default
         if "user_experience_reports" in report_path:
-            slides_folder = "user_experience_reports/slides"
+            # If the user selected the folder itself or a file within a folder that has a slides subfolder
+            if report_path.endswith("/slides") or report_path.endswith("/slides/"):
+                slides_folder = report_path
+            else:
+                slides_folder = "user_experience_reports/slides"
+
             try:
                 folder_contents = repo.get_contents(slides_folder, ref=branch_name)
                 if isinstance(folder_contents, list):
@@ -892,8 +916,12 @@ def render_slides(repo_full_name, branch_name, report_path):
         
         if os.path.exists(f"{output_dir}/index.html"):
             # Return IFrame pointing to the generated site. 
-            # We use /file= prefix which Gradio uses to serve files in allowed_paths.
-            return f'<iframe src="/file={os.path.abspath(output_dir)}/index.html" width="100%" height="600px"></iframe>'
+            # Use a path relative to the current working directory for Gradio's /file endpoint
+            rel_path = os.path.relpath(f"{output_dir}/index.html", os.getcwd())
+            add_log(f"Slides rendered. Serving from relative path: {rel_path}")
+
+            # Use 'file={rel_path}' which is more robust in HF Spaces than '/file={abs_path}'
+            return f'<iframe src="file={rel_path}" width="100%" height="600px" frameborder="0"></iframe>'
         else:
             return "Failed to render slides."
             
