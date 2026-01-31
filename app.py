@@ -968,11 +968,8 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
                 sl_refresh_branches_btn = gr.Button("Refresh Branches")
             
             with gr.Row():
-                sl_report_select = gr.Dropdown(label="Select Report/Slides File", choices=[], allow_custom_value=True)
-                sl_render_btn = gr.Button("Render Selected")
+                sl_status_display = gr.Markdown("Select a branch to discover slides.")
                 sl_render_all_btn = gr.Button("Start Carousel", variant="primary")
-            
-            sl_manual_path = gr.Textbox(label="Or enter manual path (e.g. docs/slides.md)", placeholder="docs/slides.md")
 
             with gr.Row(visible=False) as carousel_controls:
                 prev_deck_btn = gr.Button("< Previous Deck")
@@ -1000,22 +997,20 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
 
                 html = ""
                 carousel_visible = gr.update(visible=False)
-                counter_text = "No slide decks discovered."
+                status_text = "No slide decks discovered."
+                counter_text = ""
                 idx = 0
 
                 if default_val:
                     html = render_slides(repo, branch, default_val)
+                    status_text = f"✅ Found and loaded slides folder: `{default_val}`"
                     if len(reports) > 1:
                         carousel_visible = gr.update(visible=True)
                         counter_text = f"Deck 1 of {len(reports)}: {default_val}"
 
-                return gr.update(choices=reports, value=default_val), reports, html, carousel_visible, idx, counter_text
+                return status_text, reports, html, carousel_visible, idx, counter_text
 
             sl_repo_select.change(fn=sl_update_branches, inputs=[sl_repo_select], outputs=[sl_branch_select])
-
-            def sl_render_wrapper(repo, branch, selected, manual):
-                path = manual if manual else selected
-                return render_slides(repo, branch, path), gr.update(visible=False)
 
             def start_carousel(repo, branch, decks):
                 if not decks:
@@ -1038,16 +1033,8 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
             sl_branch_select.change(
                 fn=sl_auto_render,
                 inputs=[sl_repo_select, sl_branch_select],
-                outputs=[sl_report_select, all_decks_state, slideshow_display, carousel_controls, current_deck_idx, deck_counter]
+                outputs=[sl_status_display, all_decks_state, slideshow_display, carousel_controls, current_deck_idx, deck_counter]
             )
-
-            sl_report_select.change(
-                fn=sl_render_wrapper,
-                inputs=[sl_repo_select, sl_branch_select, sl_report_select, sl_manual_path],
-                outputs=[slideshow_display, carousel_controls]
-            )
-
-            sl_render_btn.click(fn=sl_render_wrapper, inputs=[sl_repo_select, sl_branch_select, sl_report_select, sl_manual_path], outputs=[slideshow_display, carousel_controls])
 
             sl_render_all_btn.click(fn=start_carousel, inputs=[sl_repo_select, sl_branch_select, all_decks_state], outputs=[slideshow_display, carousel_controls, current_deck_idx, deck_counter])
 
