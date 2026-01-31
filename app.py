@@ -272,7 +272,7 @@ def get_example_personas():
     if not os.path.exists(example_path):
         return []
     try:
-        files = [f for f in os.listdir(example_path) if f.endswith(".json")]
+        files = [f for f in os.listdir(example_path) if f.endswith(".json") or f.endswith(".md")]
         return sorted(files)
     except Exception as e:
         print(f"Error listing example personas: {e}")
@@ -302,14 +302,25 @@ def select_or_create_personas(theme, customer_profile, num_personas, force_metho
     if force_method == "Example Persona" and example_file:
         add_log(f"Loading example persona from {example_file}...")
         try:
-            with open(os.path.join("external/TinyTroupe/examples/agents/", example_file), "r") as f:
-                data = json.load(f)
-            # Adapt TinyTroupe format to our internal format
-            persona = {
-                "name": data.get("name", "Unknown"),
-                "minibio": data.get("mental_faculties", [{}])[0].get("context", "An example persona.") if "mental_faculties" in data else "An example persona.",
-                "persona": data
-            }
+            path = os.path.join("external/TinyTroupe/examples/agents/", example_file)
+            if example_file.endswith(".json"):
+                with open(path, "r") as f:
+                    data = json.load(f)
+                # Adapt TinyTroupe format to our internal format
+                persona = {
+                    "name": data.get("name", "Unknown"),
+                    "minibio": data.get("mental_faculties", [{}])[0].get("context", "An example persona.") if "mental_faculties" in data else "An example persona.",
+                    "persona": data
+                }
+            else: # .md
+                with open(path, "r") as f:
+                    content = f.read()
+                name = example_file.replace(".md", "").replace("_", " ")
+                persona = {
+                    "name": name,
+                    "minibio": content,
+                    "persona": {"name": name, "background": content}
+                }
             return [persona] * int(num_personas)
         except Exception as e:
             add_log(f"Failed to load example persona: {e}")
@@ -562,14 +573,15 @@ def generate_personas(theme, customer_profile, num_personas):
             })
     return personas_data
 
-def generate_tasks(theme, customer_profile):
+def generate_tasks(theme, customer_profile, url):
     client = get_blablador_client()
     if not client:
         return [f"Task {i+1} for {theme} (BLABLADOR_API_KEY not set)" for i in range(10)]
 
     prompt = f"""
-    Generate 10 sequential tasks for a user to perform on a website related to the theme: {theme}.
-    The user profile is: {customer_profile}.
+    Generate EXACTLY 10 sequential tasks for a user to perform on the website: {url}
+    The theme of the analysis is: {theme}.
+    The user persona profile is: {customer_profile}.
 
     The tasks should cover:
     1. Communication
@@ -577,10 +589,10 @@ def generate_tasks(theme, customer_profile):
     3. Custom Search / Information gathering
     4. Emotional connection to the persona and content/styling
 
-    The tasks must be in sequential order.
+    The tasks must be in sequential order and specific to the website {url}.
 
-    CRITICAL: You MUST return a JSON object with a "tasks" key containing a list of strings.
-    Example: {{"tasks": ["task 1", "task 2", ...]}}
+    CRITICAL: You MUST return a JSON object with a "tasks" key containing a list of exactly 10 strings.
+    Example: {"tasks": ["task 1", "task 2", ..., "task 10"]}
     Do not include any other text in your response.
     """
 
@@ -625,10 +637,10 @@ def generate_tasks(theme, customer_profile):
 
     return [f"Task {i+1} for {theme} (Manual fallback)" for i in range(10)]
 
-def handle_generate(theme, customer_profile, num_personas, method, example_file):
+def handle_generate(theme, customer_profile, num_personas, method, example_file, url):
     try:
         yield "Generating tasks...", None, None
-        tasks = generate_tasks(theme, customer_profile)
+        tasks = generate_tasks(theme, customer_profile, url)
 
         yield "Selecting or creating personas...", tasks, None
         personas = select_or_create_personas(theme, customer_profile, num_personas, force_method=method, example_file=example_file)
@@ -1006,7 +1018,7 @@ You are an expert Frontend Developer. Your task is to implement the following "L
 """
     return prompt
 
-def generate_full_ui_call(repo, branch, session_id, selected_solutions_json):
+def generate_full_ui_call(repo, branch, session_id, selected_solutions_json, url):
     if not ANALYSIS_API_KEY or not session_id:
         return "Error: API Key or Session ID missing. Start a session first."
 
@@ -1019,7 +1031,7 @@ def generate_full_ui_call(repo, branch, session_id, selected_solutions_json):
         return f"Error reading template: {e}"
 
     prompt = template.replace("{{selected_solutions}}", selected_solutions_json)
-    prompt = prompt.replace("{{url}}", "the analyzed website")
+    prompt = prompt.replace("{{url}}", url if url else "the analyzed website")
     prompt = prompt.replace("{{analysis_report}}", "See previous activities in this session")
     prompt = prompt.replace("{{report_id}}", session_id[:8])
     prompt = prompt.replace("{{screenshots_dir}}", f"user_experience_reports/screenshots/{session_id[:8]}")
@@ -1051,7 +1063,8 @@ def poll_for_generated_ui(repo_full_name, branch_name, session_id):
     except:
         return "UI not generated yet. Please wait..."
 
-def blablador_chat_adaptation(message, history, session_id):
+def blablador_chat_adaptation(message="", history=[], session_id=""):
+    print(f"DEBUG: blablador_chat_adaptation called with message='{message}', history='{history}', session_id='{session_id}'")
     if not BLABLADOR_API_KEY or not session_id:
         return history + [("System", "Error: BLABLADOR_API_KEY or Session ID missing.")], ""
 
@@ -1151,7 +1164,7 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
         with gr.Tab("Presentation Carousel"):
             gr.Markdown("### View Presentation Slides")
             with gr.Row():
-                sl_repo_select = gr.Dropdown(label="Repository", choices=get_user_repos(), value=REPO_NAME)
+                sl_repo_select = gr.Dropdown(label="Repository", choices=[REPO_NAME], value=REPO_NAME, interactive=False)
                 sl_branch_select = gr.Dropdown(label="Branch", choices=get_repo_branches(REPO_NAME))
                 sl_refresh_branches_btn = gr.Button("Refresh Branches")
             
@@ -1236,7 +1249,7 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
         with gr.Tab("Report Viewer"):
             gr.Markdown("### View UX Reports & Solutions")
             with gr.Row():
-                rv_repo_select = gr.Dropdown(label="Repository", choices=get_user_repos(), value=REPO_NAME)
+                rv_repo_select = gr.Dropdown(label="Repository", choices=[REPO_NAME], value=REPO_NAME, interactive=False)
                 rv_branch_select = gr.Dropdown(label="Branch", choices=get_repo_branches(REPO_NAME))
                 rv_refresh_branches_btn = gr.Button("Refresh Branches")
 
@@ -1313,7 +1326,7 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
                     ui_chat_msg = gr.Textbox(label="Request Modification", placeholder="e.g. Change primary color to emerald...")
                     ui_chat_send = gr.Button("Send Request")
 
-            generate_full_ui_btn.click(fn=generate_full_ui_call, inputs=[rv_repo_select, rv_branch_select, active_session_state, selected_solutions_json_state], outputs=[full_ui_iframe])
+            generate_full_ui_btn.click(fn=generate_full_ui_call, inputs=[rv_repo_select, rv_branch_select, active_session_state, selected_solutions_json_state, url_input], outputs=[full_ui_iframe])
             refresh_ui_btn.click(fn=poll_for_generated_ui, inputs=[rv_repo_select, rv_branch_select, active_session_state], outputs=[full_ui_iframe])
             ui_chat_send.click(fn=blablador_chat_adaptation, inputs=[ui_chat_msg, ui_chatbot, active_session_state], outputs=[ui_chatbot, ui_chat_msg])
 
@@ -1322,7 +1335,7 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
             gr.Markdown("### System Diagnostics & Manual Connection")
             with gr.Row():
                 sys_token_input = gr.Textbox(label="GitHub Token (Leave blank for default)", type="password")
-                sys_repo_input = gr.Textbox(label="Repository (e.g., JsonLord/tiny_web)", value=REPO_NAME)
+                sys_repo_input = gr.Textbox(label="Repository (e.g., JsonLord/tiny_web)", value=REPO_NAME, interactive=False)
                 sys_test_btn = gr.Button("Test Connection & Fetch Branches")
             
             sys_status = gr.Textbox(label="Connection Status", interactive=False)
@@ -1385,7 +1398,7 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
     # Event handlers
     generate_btn.click(
         fn=handle_generate,
-        inputs=[theme_input, profile_input, num_personas_input, persona_method, example_persona_select],
+        inputs=[theme_input, profile_input, num_personas_input, persona_method, example_persona_select, url_input],
         outputs=[status_output, task_list_display, persona_display]
     )
 
