@@ -286,7 +286,20 @@ def upload_persona_to_pool(persona_data):
     except Exception as e:
         print(f"Error uploading persona to pool: {e}")
 
-def select_or_create_personas(theme, customer_profile, num_personas):
+def select_or_create_personas(theme, customer_profile, num_personas, force_method=None):
+    if force_method == "DeepPersona":
+        add_log("Forcing DeepPersona generation...")
+        personas = []
+        for i in range(int(num_personas)):
+            p = generate_persona_from_endpoint(theme, customer_profile)
+            if p: personas.append(p)
+        if len(personas) == int(num_personas): return personas
+        # fallback if some failed
+        num_personas = int(num_personas) - len(personas)
+    elif force_method == "TinyTroupe":
+        add_log("Forcing TinyTroupe generation...")
+        return generate_personas(theme, customer_profile, num_personas)
+
     client = get_blablador_client()
     if not client:
         return generate_personas(theme, customer_profile, num_personas)
@@ -561,13 +574,13 @@ def generate_tasks(theme, customer_profile):
 
     return [f"Task {i+1} for {theme} (Manual fallback)" for i in range(10)]
 
-def handle_generate(theme, customer_profile, num_personas):
+def handle_generate(theme, customer_profile, num_personas, method):
     try:
         yield "Generating tasks...", None, None
         tasks = generate_tasks(theme, customer_profile)
 
         yield "Selecting or creating personas...", tasks, None
-        personas = select_or_create_personas(theme, customer_profile, num_personas)
+        personas = select_or_create_personas(theme, customer_profile, num_personas, force_method=method)
 
         yield "Generation complete!", tasks, personas
     except Exception as e:
@@ -578,7 +591,7 @@ def start_and_monitor_sessions(personas, tasks, url):
     branch_name = "main"
 
     if not ANALYSIS_API_KEY:
-        yield "Error: Analysis API key not set.", ""
+        yield "Error: Analysis API key not set.", "", ""
         return
 
     with open("analysis_template.md", "r") as f:
@@ -615,20 +628,24 @@ def start_and_monitor_sessions(personas, tasks, url):
 
         response = requests.post(f"{ANALYSIS_API_URL}/sessions", headers=headers, json=data)
         if response.status_code == 200:
-            sessions.append(response.json())
+            sess_data = response.json()
+            sessions.append(sess_data)
+            yield f"Session created: {sess_data['id']}", "", sess_data['id']
         else:
-            yield f"Error creating session for {persona['name']}: {response.text}", ""
+            yield f"Error creating session for {persona['name']}: {response.text}", "", ""
             return
 
     # Monitoring
     all_reports = ""
+    last_session_id = ""
     while sessions:
         for i, session in enumerate(sessions):
             session_id = session['id']
+            last_session_id = session_id
             res = requests.get(f"{ANALYSIS_API_URL}/sessions/{session_id}", headers=headers)
             if res.status_code == 200:
                 current_session = res.json()
-                yield f"Monitoring sessions... Status of {current_session.get('title')}: {current_session.get('state', 'UNKNOWN')}", all_reports
+                yield f"Monitoring sessions... Status of {current_session.get('title')}: {current_session.get('state', 'UNKNOWN')}", all_reports, session_id
 
                 # Check for PR in outputs
                 outputs = current_session.get("outputs", [])
@@ -639,7 +656,7 @@ def start_and_monitor_sessions(personas, tasks, url):
                         break
 
                 if pr_url:
-                    yield f"PR created for {current_session.get('title')}: {pr_url}. Pulling report...", all_reports
+                    yield f"PR created for {current_session.get('title')}: {pr_url}. Pulling report...", all_reports, session_id
                     report_content = pull_report_from_pr(pr_url)
                     all_reports += f"\n\n# Report for {current_session.get('title')}\n\n{report_content}"
                     sessions.pop(i)
@@ -650,7 +667,7 @@ def start_and_monitor_sessions(personas, tasks, url):
         if sessions:
             time.sleep(30) # Poll every 30 seconds
 
-    yield "All sessions complete!", all_reports
+    yield "All sessions complete!", all_reports, last_session_id
 
 def get_reports_in_branch(repo_full_name, branch_name, filter_type=None):
     if not gh or not repo_full_name or not branch_name:
@@ -869,6 +886,143 @@ def render_slides(repo_full_name, branch_name, report_path):
         print(f"Error rendering slides: {e}")
         return f"Error rendering slides: {str(e)}"
 
+def get_heatmaps_from_repo(repo_full_name, branch_name):
+    if not gh or not repo_full_name or not branch_name:
+        return []
+    try:
+        repo = gh.get_repo(repo_full_name)
+        add_log(f"Scanning branch {branch_name} for heatmaps...")
+        try:
+            contents = repo.get_contents("user_experience_reports/heatmaps", ref=branch_name)
+            heatmaps = []
+            for c in contents:
+                if c.name.endswith(".png"):
+                    heatmaps.append((c.download_url, c.name))
+            return heatmaps
+        except:
+            return []
+    except Exception as e:
+        add_log(f"Error fetching heatmaps: {e}")
+        return []
+
+def get_solutions_from_repo(repo_full_name, branch_name):
+    if not gh or not repo_full_name or not branch_name:
+        return []
+    try:
+        repo = gh.get_repo(repo_full_name)
+        add_log(f"Scanning branch {branch_name} for solutions...")
+        try:
+            contents = repo.get_contents("user_experience_reports/solutions", ref=branch_name)
+            solutions = []
+            for c in contents:
+                if c.name.endswith(".md"):
+                    text = c.decoded_content.decode("utf-8")
+                    solutions.append({"name": c.name, "content": text, "path": c.path})
+            return solutions
+        except:
+            return []
+    except Exception as e:
+        add_log(f"Error fetching solutions: {e}")
+        return []
+
+def generate_agents_prompt(selected_solutions_json):
+    if not selected_solutions_json:
+        return "No solutions selected."
+    try:
+        selected_solutions = json.loads(selected_solutions_json)
+    except:
+        return f"Error parsing solutions: {selected_solutions_json}"
+
+    prompt = """# Coding Agent Prompt: Implement UX Solutions
+
+You are an expert Frontend Developer. Your task is to implement the following "Liked" UX solutions into the project.
+
+## Selected Solutions to Implement:
+"""
+    for sol in selected_solutions:
+        prompt += f"\n### {sol['name']}\n{sol['content']}\n"
+
+    prompt += """
+## Instructions:
+1. Review the existing UI components.
+2. Replace or enhance them using the provided code snippets.
+3. Ensure the implementation is responsive and adheres to the project's design system.
+4. Verify accessibility and performance after implementation.
+"""
+    return prompt
+
+def generate_full_ui_call(repo, branch, session_id, selected_solutions_json):
+    if not ANALYSIS_API_KEY or not session_id:
+        return "Error: API Key or Session ID missing. Start a session first."
+
+    try:
+        if not os.path.exists("ui_generation_template.md"):
+            return "Error: ui_generation_template.md not found."
+        with open("ui_generation_template.md", "r") as f:
+            template = f.read()
+    except Exception as e:
+        return f"Error reading template: {e}"
+
+    prompt = template.replace("{{selected_solutions}}", selected_solutions_json)
+    prompt = prompt.replace("{{url}}", "Original Target URL")
+    prompt = prompt.replace("{{analysis_report}}", "See previous activities in this session")
+    prompt = prompt.replace("{{report_id}}", session_id[:8])
+
+    headers = {
+        "X-Goog-Api-Key": ANALYSIS_API_KEY,
+        "Content-Type": "application/json"
+    }
+    data = {
+        "prompt": prompt
+    }
+
+    add_log(f"Sending UI generation request to session {session_id}...")
+    response = requests.post(f"{ANALYSIS_API_URL}/sessions/{session_id}:sendMessage", headers=headers, json=data)
+    if response.status_code == 200:
+        return f"✅ UI generation requested for session {session_id}. Please wait a few minutes and refresh."
+    else:
+        add_log(f"API Error: {response.text}")
+        return f"❌ Error: {response.text}"
+
+def poll_for_generated_ui(repo_full_name, branch_name, session_id):
+    if not gh or not repo_full_name or not branch_name or not session_id:
+        return None
+    try:
+        repo = gh.get_repo(repo_full_name)
+        path = f"user_experience_reports/generated_ui_{session_id[:8]}.html"
+        file_content = repo.get_contents(path, ref=branch_name)
+        return f'<iframe src="{file_content.download_url}" width="100%" height="800px" frameborder="0"></iframe>'
+    except:
+        return "UI not generated yet. Please wait..."
+
+def blablador_chat_adaptation(message, history, session_id):
+    if not BLABLADOR_API_KEY or not session_id:
+        return history + [("System", "Error: BLABLADOR_API_KEY or Session ID missing.")], ""
+
+    # This should call sendMessage to the same session_id for real-time adaptation
+    # but also use alias-code for the chat experience if desired.
+    # The user asked to call alias-code model on blablador endpoint.
+
+    client = get_blablador_client()
+    prompt = f"User request for UI adaptation: {message}\n\nPlease update the generated UI and save it."
+
+    try:
+        response = client.chat.completions.create(
+            model="alias-code",
+            messages=[{"role": "user", "content": prompt}]
+        )
+        agent_msg = response.choices[0].message.content
+
+        # Also notify Jules session to actually do the work if needed
+        headers = {"X-Goog-Api-Key": ANALYSIS_API_KEY, "Content-Type": "application/json"}
+        requests.post(f"{ANALYSIS_API_URL}/sessions/{session_id}:sendMessage", headers=headers, json={"prompt": message})
+
+        history.append((message, agent_msg))
+        return history, ""
+    except Exception as e:
+        history.append((message, f"Error: {str(e)}"))
+        return history, ""
+
 def monitor_repo_for_reports():
     global all_discovered_reports
     if not gh:
@@ -908,6 +1062,10 @@ def monitor_repo_for_reports():
 with gr.Blocks(title="UX Analysis Orchestrator") as demo:
     gr.Markdown("# UX Analysis Orchestrator")
 
+    active_session_state = gr.State("")
+    all_solutions_state = gr.State([])
+    selected_solutions_json_state = gr.State("[]")
+
     with gr.Tabs():
         with gr.Tab("Analysis Orchestrator"):
             gr.Markdown("### Start New Analysis Sessions")
@@ -916,6 +1074,7 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
                     theme_input = gr.Textbox(label="Theme", placeholder="e.g., Communication, Purchase decisions, Information gathering")
                     profile_input = gr.Textbox(label="Customer Profile Description", placeholder="Describe the target customer...")
                     num_personas_input = gr.Number(label="Number of Personas", value=1, precision=0)
+                    persona_method = gr.Radio(["TinyTroupe", "DeepPersona"], label="Persona Generation Method", value="TinyTroupe")
                     url_input = gr.Textbox(label="Target URL", value="https://example.com")
                     generate_btn = gr.Button("Generate Personas & Tasks")
 
@@ -928,7 +1087,7 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
             report_output = gr.Markdown(label="Active Session Reports")
 
         with gr.Tab("Report Viewer"):
-            gr.Markdown("### View UX Reports")
+            gr.Markdown("### View UX Reports & Solutions")
             with gr.Row():
                 rv_repo_select = gr.Dropdown(label="Repository", choices=get_user_repos(), value=REPO_NAME)
                 rv_branch_select = gr.Dropdown(label="Branch", choices=get_repo_branches(REPO_NAME))
@@ -940,8 +1099,27 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
             
             rv_manual_path = gr.Textbox(label="Or enter manual path (e.g. docs/my_report.md)", placeholder="docs/my_report.md")
 
-            rv_report_viewer = gr.Markdown(label="Report Content")
-            
+            with gr.Tabs():
+                with gr.Tab("Report"):
+                    rv_report_viewer = gr.Markdown(label="Report Content")
+                with gr.Tab("Better UI Solutions"):
+                    gr.Markdown("Select the solutions you want to include in the full UI generation.")
+                    solutions_checkboxes = gr.CheckboxGroup(label="Identified UI Improvements", choices=[])
+                    refresh_solutions_btn = gr.Button("Scan for Solutions")
+
+                    def refresh_solutions_ui(repo, branch):
+                        sols = get_solutions_from_repo(repo, branch)
+                        choices = [s["name"] for s in sols]
+                        return gr.update(choices=choices), sols
+
+                    refresh_solutions_btn.click(fn=refresh_solutions_ui, inputs=[rv_repo_select, rv_branch_select], outputs=[solutions_checkboxes, all_solutions_state])
+
+                    def update_selected_solutions(selected_names, all_sols):
+                        selected = [s for s in all_sols if s["name"] in selected_names]
+                        return json.dumps(selected)
+
+                    solutions_checkboxes.change(fn=update_selected_solutions, inputs=[solutions_checkboxes, all_solutions_state], outputs=[selected_solutions_json_state])
+
             def rv_update_branches(repo_name):
                 branches = get_repo_branches(repo_name)
                 latest = branches[0] if branches else "main"
@@ -959,6 +1137,38 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
             rv_refresh_branches_btn.click(fn=rv_update_branches, inputs=[rv_repo_select], outputs=[rv_branch_select])
             rv_branch_select.change(fn=rv_update_reports, inputs=[rv_repo_select, rv_branch_select], outputs=[rv_report_select])
             rv_load_report_btn.click(fn=rv_load_wrapper, inputs=[rv_repo_select, rv_branch_select, rv_report_select, rv_manual_path], outputs=[rv_report_viewer])
+
+        with gr.Tab("Average User Journey Heatmaps"):
+            gr.Markdown("### Heatmaps")
+            refresh_heatmaps_btn = gr.Button("Refresh Heatmaps")
+            heatmap_gallery = gr.Gallery(label="User Interaction Heatmaps", columns=2)
+
+            refresh_heatmaps_btn.click(fn=get_heatmaps_from_repo, inputs=[rv_repo_select, rv_branch_select], outputs=[heatmap_gallery])
+
+        with gr.Tab("Agents.txt"):
+            gr.Markdown("### Coding Agent Prompt")
+            refresh_agent_prompt_btn = gr.Button("Generate Prompt for Agent")
+            agent_prompt_display = gr.Code(label="Prompt for Coding Agent", language="markdown")
+
+            refresh_agent_prompt_btn.click(fn=generate_agents_prompt, inputs=[selected_solutions_json_state], outputs=[agent_prompt_display])
+
+        with gr.Tab("Full New UI"):
+            with gr.Row():
+                with gr.Column(scale=3):
+                    gr.Markdown("### Generated Landing Page")
+                    generate_full_ui_btn = gr.Button("Generate Full New UI from Selected Solutions", variant="primary")
+                    refresh_ui_btn = gr.Button("Refresh UI Display")
+                    full_ui_iframe = gr.HTML(label="Generated UI", value="Click Generate to start.")
+
+                with gr.Column(scale=1):
+                    gr.Markdown("### Real-time Adaptation")
+                    ui_chatbot = gr.Chatbot(label="Design Chat")
+                    ui_chat_msg = gr.Textbox(label="Request Modification", placeholder="e.g. Change primary color to emerald...")
+                    ui_chat_send = gr.Button("Send Request")
+
+            generate_full_ui_btn.click(fn=generate_full_ui_call, inputs=[rv_repo_select, rv_branch_select, active_session_state, selected_solutions_json_state], outputs=[full_ui_iframe])
+            refresh_ui_btn.click(fn=poll_for_generated_ui, inputs=[rv_repo_select, rv_branch_select, active_session_state], outputs=[full_ui_iframe])
+            ui_chat_send.click(fn=blablador_chat_adaptation, inputs=[ui_chat_msg, ui_chatbot, active_session_state], outputs=[ui_chatbot, ui_chat_msg])
 
         with gr.Tab("Presentation Carousel"):
             gr.Markdown("### View Presentation Slides")
@@ -1112,14 +1322,14 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
     # Event handlers
     generate_btn.click(
         fn=handle_generate,
-        inputs=[theme_input, profile_input, num_personas_input],
+        inputs=[theme_input, profile_input, num_personas_input, persona_method],
         outputs=[status_output, task_list_display, persona_display]
     )
 
     start_session_btn.click(
         fn=start_and_monitor_sessions,
         inputs=[persona_display, task_list_display, url_input],
-        outputs=[status_output, report_output]
+        outputs=[status_output, report_output, active_session_state]
     )
 
 if __name__ == "__main__":

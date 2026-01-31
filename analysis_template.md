@@ -22,6 +22,19 @@ You will simulate a persona performing tasks, but the final output must read lik
 
 ## 2. OPERATIONAL GUIDELINES (UNCHANGED – STRICT)
 
+### Task Execution & Data Collection
+
+1. **Sequential Execution**: Perform the 10 tasks provided in `{{tasks_list}}` one by one.
+2. **Coordinate Tracking**: For every click or interaction, record the (x, y) coordinates relative to the viewport.
+3. **Heatmap Generation**: After completing all tasks, generate "Average User Journey Heatmaps" by overlaying the recorded interaction points onto screenshots of the relevant pages.
+   - Save these heatmap images as PNG files in `/user_experience_reports/heatmaps/`.
+   - Name them descriptively, e.g., `heatmap_task1.png`, `average_journey_heatmap.png`.
+4. **Problem Identification & UI Solutions**: For every UX problem identified during the tasks:
+   - Categorize the problem.
+   - Propose a "Better UI" solution.
+   - Provide a functional code snippet (HTML/CSS/JS) for the improved component.
+   - Include these in the final report markdown and also save individual snippets to `/user_experience_reports/solutions/problem_{id}.md`.
+
 ### Setup (MANDATORY)
 
 Clone TinyTroupe:
