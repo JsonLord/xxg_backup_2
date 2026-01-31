@@ -916,13 +916,15 @@ def render_slides(repo_full_name, branch_name, report_path):
         
         if os.path.exists(f"{output_dir}/index.html"):
             # Return IFrame pointing to the generated site. 
-            # Use absolute path with file= prefix which is robust in Gradio 4
+            # Use absolute path with 'file/' prefix which is standard in Gradio 4+
             abspath = os.path.abspath(f"{output_dir}/index.html")
-            add_log(f"Slides rendered. Serving from: {abspath}")
+            add_log(f"Slides rendered successfully: {abspath}")
 
-            return f'<iframe src="file={abspath}" width="100%" height="600px" frameborder="0"></iframe>'
+            # Using 'file/' prefix with absolute path
+            return f'<iframe src="file/{abspath}" width="100%" height="600px" frameborder="0"></iframe>'
         else:
-            return "Failed to render slides."
+            add_log(f"ERROR: mkslides finished but {output_dir}/index.html not found.")
+            return "Failed to render slides: index.html not found."
             
     except Exception as e:
         print(f"Error rendering slides: {e}")
@@ -1019,7 +1021,7 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
             rv_branch_select.change(fn=rv_update_reports, inputs=[rv_repo_select, rv_branch_select], outputs=[rv_report_select])
             rv_load_report_btn.click(fn=rv_load_wrapper, inputs=[rv_repo_select, rv_branch_select, rv_report_select, rv_manual_path], outputs=[rv_report_viewer])
 
-        with gr.Tab("Slideshow"):
+        with gr.Tab("Presentation Carousel"):
             gr.Markdown("### View Presentation Slides")
             with gr.Row():
                 sl_repo_select = gr.Dropdown(label="Repository", choices=get_user_repos(), value=REPO_NAME)
@@ -1028,11 +1030,20 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
             
             with gr.Row():
                 sl_report_select = gr.Dropdown(label="Select Report/Slides File", choices=[], allow_custom_value=True)
-                sl_render_btn = gr.Button("Render Slideshow")
+                sl_render_btn = gr.Button("Render Selected")
+                sl_render_all_btn = gr.Button("Start Carousel", variant="primary")
             
             sl_manual_path = gr.Textbox(label="Or enter manual path (e.g. docs/slides.md)", placeholder="docs/slides.md")
 
+            with gr.Row(visible=False) as carousel_controls:
+                prev_deck_btn = gr.Button("< Previous Deck")
+                deck_counter = gr.Markdown("Deck 0 of 0")
+                next_deck_btn = gr.Button("Next Deck >")
+
             slideshow_display = gr.HTML(label="Slideshow")
+
+            all_decks_state = gr.State([])
+            current_deck_idx = gr.State(0)
 
             def sl_update_branches(repo_name):
                 branches = get_repo_branches(repo_name)
@@ -1041,16 +1052,43 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
 
             def sl_update_reports(repo_name, branch_name):
                 reports = get_reports_in_branch(repo_name, branch_name, filter_type="slides")
-                return gr.update(choices=reports, value=reports[0] if reports else None)
+                return gr.update(choices=reports, value=reports[0] if reports else None), reports
 
             sl_repo_select.change(fn=sl_update_branches, inputs=[sl_repo_select], outputs=[sl_branch_select])
+
             def sl_render_wrapper(repo, branch, selected, manual):
                 path = manual if manual else selected
-                return render_slides(repo, branch, path)
+                return render_slides(repo, branch, path), gr.update(visible=False)
+
+            def start_carousel(repo, branch, decks):
+                if not decks:
+                    return "No slide decks found.", gr.update(visible=False), 0, "No decks."
+
+                # Render first deck
+                html = render_slides(repo, branch, decks[0])
+                counter_text = f"Deck 1 of {len(decks)}: {decks[0]}"
+                return html, gr.update(visible=True), 0, counter_text
+
+            def navigate_carousel(repo, branch, decks, current_idx, direction):
+                if not decks: return "", 0, "No decks."
+                new_idx = (current_idx + direction) % len(decks)
+                html = render_slides(repo, branch, decks[new_idx])
+                counter_text = f"Deck {new_idx + 1} of {len(decks)}: {decks[new_idx]}"
+                return html, new_idx, counter_text
 
             sl_refresh_branches_btn.click(fn=sl_update_branches, inputs=[sl_repo_select], outputs=[sl_branch_select])
-            sl_branch_select.change(fn=sl_update_reports, inputs=[sl_repo_select, sl_branch_select], outputs=[sl_report_select])
-            sl_render_btn.click(fn=sl_render_wrapper, inputs=[sl_repo_select, sl_branch_select, sl_report_select, sl_manual_path], outputs=[slideshow_display])
+            sl_branch_select.change(fn=sl_update_reports, inputs=[sl_repo_select, sl_branch_select], outputs=[sl_report_select, all_decks_state])
+
+            sl_render_btn.click(fn=sl_render_wrapper, inputs=[sl_repo_select, sl_branch_select, sl_report_select, sl_manual_path], outputs=[slideshow_display, carousel_controls])
+
+            sl_render_all_btn.click(fn=start_carousel, inputs=[sl_repo_select, sl_branch_select, all_decks_state], outputs=[slideshow_display, carousel_controls, current_deck_idx, deck_counter])
+
+            # Use small helper components for navigation direction
+            prev_val = gr.Number(-1, visible=False)
+            next_val = gr.Number(1, visible=False)
+
+            prev_deck_btn.click(fn=navigate_carousel, inputs=[sl_repo_select, sl_branch_select, all_decks_state, current_deck_idx, prev_val], outputs=[slideshow_display, current_deck_idx, deck_counter])
+            next_deck_btn.click(fn=navigate_carousel, inputs=[sl_repo_select, sl_branch_select, all_decks_state, current_deck_idx, next_val], outputs=[slideshow_display, current_deck_idx, deck_counter])
 
         with gr.Tab("System"):
             gr.Markdown("### System Diagnostics & Manual Connection")
@@ -1152,4 +1190,4 @@ if __name__ == "__main__":
     print("-----------------------------------------")
 
     # Allow current directory for file serving, specifically for slides_site_*
-    demo.launch(allowed_paths=[os.getcwd()])
+    demo.launch(allowed_paths=[os.getcwd(), os.path.abspath(os.getcwd())])
