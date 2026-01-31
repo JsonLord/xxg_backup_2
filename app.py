@@ -1086,90 +1086,6 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
             start_session_btn = gr.Button("Start Analysis Session", variant="primary")
             report_output = gr.Markdown(label="Active Session Reports")
 
-        with gr.Tab("Report Viewer"):
-            gr.Markdown("### View UX Reports & Solutions")
-            with gr.Row():
-                rv_repo_select = gr.Dropdown(label="Repository", choices=get_user_repos(), value=REPO_NAME)
-                rv_branch_select = gr.Dropdown(label="Branch", choices=get_repo_branches(REPO_NAME))
-                rv_refresh_branches_btn = gr.Button("Refresh Branches")
-            
-            with gr.Row():
-                rv_report_select = gr.Dropdown(label="Select Report", choices=[], allow_custom_value=True)
-                rv_load_report_btn = gr.Button("Load Report")
-            
-            rv_manual_path = gr.Textbox(label="Or enter manual path (e.g. docs/my_report.md)", placeholder="docs/my_report.md")
-
-            with gr.Tabs():
-                with gr.Tab("Report"):
-                    rv_report_viewer = gr.Markdown(label="Report Content")
-                with gr.Tab("Better UI Solutions"):
-                    gr.Markdown("Select the solutions you want to include in the full UI generation.")
-                    solutions_checkboxes = gr.CheckboxGroup(label="Identified UI Improvements", choices=[])
-                    refresh_solutions_btn = gr.Button("Scan for Solutions")
-
-                    def refresh_solutions_ui(repo, branch):
-                        sols = get_solutions_from_repo(repo, branch)
-                        choices = [s["name"] for s in sols]
-                        return gr.update(choices=choices), sols
-
-                    refresh_solutions_btn.click(fn=refresh_solutions_ui, inputs=[rv_repo_select, rv_branch_select], outputs=[solutions_checkboxes, all_solutions_state])
-
-                    def update_selected_solutions(selected_names, all_sols):
-                        selected = [s for s in all_sols if s["name"] in selected_names]
-                        return json.dumps(selected)
-
-                    solutions_checkboxes.change(fn=update_selected_solutions, inputs=[solutions_checkboxes, all_solutions_state], outputs=[selected_solutions_json_state])
-
-            def rv_update_branches(repo_name):
-                branches = get_repo_branches(repo_name)
-                latest = branches[0] if branches else "main"
-                return gr.update(choices=branches, value=latest)
-
-            def rv_update_reports(repo_name, branch_name):
-                reports = get_reports_in_branch(repo_name, branch_name, filter_type="report")
-                return gr.update(choices=reports, value=reports[0] if reports else None)
-
-            rv_repo_select.change(fn=rv_update_branches, inputs=[rv_repo_select], outputs=[rv_branch_select])
-            def rv_load_wrapper(repo, branch, selected, manual):
-                path = manual if manual else selected
-                return get_report_content(repo, branch, path)
-
-            rv_refresh_branches_btn.click(fn=rv_update_branches, inputs=[rv_repo_select], outputs=[rv_branch_select])
-            rv_branch_select.change(fn=rv_update_reports, inputs=[rv_repo_select, rv_branch_select], outputs=[rv_report_select])
-            rv_load_report_btn.click(fn=rv_load_wrapper, inputs=[rv_repo_select, rv_branch_select, rv_report_select, rv_manual_path], outputs=[rv_report_viewer])
-
-        with gr.Tab("Average User Journey Heatmaps"):
-            gr.Markdown("### Heatmaps")
-            refresh_heatmaps_btn = gr.Button("Refresh Heatmaps")
-            heatmap_gallery = gr.Gallery(label="User Interaction Heatmaps", columns=2)
-
-            refresh_heatmaps_btn.click(fn=get_heatmaps_from_repo, inputs=[rv_repo_select, rv_branch_select], outputs=[heatmap_gallery])
-
-        with gr.Tab("Agents.txt"):
-            gr.Markdown("### Coding Agent Prompt")
-            refresh_agent_prompt_btn = gr.Button("Generate Prompt for Agent")
-            agent_prompt_display = gr.Code(label="Prompt for Coding Agent", language="markdown")
-
-            refresh_agent_prompt_btn.click(fn=generate_agents_prompt, inputs=[selected_solutions_json_state], outputs=[agent_prompt_display])
-
-        with gr.Tab("Full New UI"):
-            with gr.Row():
-                with gr.Column(scale=3):
-                    gr.Markdown("### Generated Landing Page")
-                    generate_full_ui_btn = gr.Button("Generate Full New UI from Selected Solutions", variant="primary")
-                    refresh_ui_btn = gr.Button("Refresh UI Display")
-                    full_ui_iframe = gr.HTML(label="Generated UI", value="Click Generate to start.")
-
-                with gr.Column(scale=1):
-                    gr.Markdown("### Real-time Adaptation")
-                    ui_chatbot = gr.Chatbot(label="Design Chat")
-                    ui_chat_msg = gr.Textbox(label="Request Modification", placeholder="e.g. Change primary color to emerald...")
-                    ui_chat_send = gr.Button("Send Request")
-
-            generate_full_ui_btn.click(fn=generate_full_ui_call, inputs=[rv_repo_select, rv_branch_select, active_session_state, selected_solutions_json_state], outputs=[full_ui_iframe])
-            refresh_ui_btn.click(fn=poll_for_generated_ui, inputs=[rv_repo_select, rv_branch_select, active_session_state], outputs=[full_ui_iframe])
-            ui_chat_send.click(fn=blablador_chat_adaptation, inputs=[ui_chat_msg, ui_chatbot, active_session_state], outputs=[ui_chatbot, ui_chat_msg])
-
         with gr.Tab("Presentation Carousel"):
             gr.Markdown("### View Presentation Slides")
             with gr.Row():
@@ -1254,6 +1170,91 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
 
             prev_deck_btn.click(fn=navigate_carousel, inputs=[sl_repo_select, sl_branch_select, all_decks_state, current_deck_idx, prev_val], outputs=[slideshow_display, current_deck_idx, deck_counter])
             next_deck_btn.click(fn=navigate_carousel, inputs=[sl_repo_select, sl_branch_select, all_decks_state, current_deck_idx, next_val], outputs=[slideshow_display, current_deck_idx, deck_counter])
+
+        with gr.Tab("Report Viewer"):
+            gr.Markdown("### View UX Reports & Solutions")
+            with gr.Row():
+                rv_repo_select = gr.Dropdown(label="Repository", choices=get_user_repos(), value=REPO_NAME)
+                rv_branch_select = gr.Dropdown(label="Branch", choices=get_repo_branches(REPO_NAME))
+                rv_refresh_branches_btn = gr.Button("Refresh Branches")
+
+            with gr.Row():
+                rv_report_select = gr.Dropdown(label="Select Report", choices=[], allow_custom_value=True)
+                rv_load_report_btn = gr.Button("Load Report")
+
+            rv_manual_path = gr.Textbox(label="Or enter manual path (e.g. docs/my_report.md)", placeholder="docs/my_report.md")
+
+            with gr.Tabs():
+                with gr.Tab("Report"):
+                    rv_report_viewer = gr.Markdown(label="Report Content")
+                with gr.Tab("Better UI Solutions"):
+                    gr.Markdown("Select the solutions you want to include in the full UI generation.")
+                    solutions_checkboxes = gr.CheckboxGroup(label="Identified UI Improvements", choices=[])
+                    refresh_solutions_btn = gr.Button("Scan for Solutions")
+
+                    def refresh_solutions_ui(repo, branch):
+                        sols = get_solutions_from_repo(repo, branch)
+                        choices = [s["name"] for s in sols]
+                        return gr.update(choices=choices), sols
+
+                    refresh_solutions_btn.click(fn=refresh_solutions_ui, inputs=[rv_repo_select, rv_branch_select], outputs=[solutions_checkboxes, all_solutions_state])
+
+                    def update_selected_solutions(selected_names, all_sols):
+                        selected = [s for s in all_sols if s["name"] in selected_names]
+                        return json.dumps(selected)
+
+                    solutions_checkboxes.change(fn=update_selected_solutions, inputs=[solutions_checkboxes, all_solutions_state], outputs=[selected_solutions_json_state])
+
+            def rv_update_branches(repo_name):
+                branches = get_repo_branches(repo_name)
+                latest = branches[0] if branches else "main"
+                return gr.update(choices=branches, value=latest)
+
+            def rv_update_reports(repo_name, branch_name):
+                reports = get_reports_in_branch(repo_name, branch_name, filter_type="report")
+                return gr.update(choices=reports, value=reports[0] if reports else None)
+
+            rv_repo_select.change(fn=rv_update_branches, inputs=[rv_repo_select], outputs=[rv_branch_select])
+            def rv_load_wrapper(repo, branch, selected, manual):
+                path = manual if manual else selected
+                return get_report_content(repo, branch, path)
+
+            rv_refresh_branches_btn.click(fn=rv_update_branches, inputs=[rv_repo_select], outputs=[rv_branch_select])
+            rv_branch_select.change(fn=rv_update_reports, inputs=[rv_repo_select, rv_branch_select], outputs=[rv_report_select])
+            rv_load_report_btn.click(fn=rv_load_wrapper, inputs=[rv_repo_select, rv_branch_select, rv_report_select, rv_manual_path], outputs=[rv_report_viewer])
+
+        with gr.Tab("Average User Journey Heatmaps"):
+            gr.Markdown("### Heatmaps")
+            refresh_heatmaps_btn = gr.Button("Refresh Heatmaps")
+            heatmap_gallery = gr.Gallery(label="User Interaction Heatmaps", columns=2)
+
+            refresh_heatmaps_btn.click(fn=get_heatmaps_from_repo, inputs=[rv_repo_select, rv_branch_select], outputs=[heatmap_gallery])
+
+        with gr.Tab("Agents.txt"):
+            gr.Markdown("### Coding Agent Prompt")
+            refresh_agent_prompt_btn = gr.Button("Generate Prompt for Agent")
+            agent_prompt_display = gr.Code(label="Prompt for Coding Agent", language="markdown")
+
+            refresh_agent_prompt_btn.click(fn=generate_agents_prompt, inputs=[selected_solutions_json_state], outputs=[agent_prompt_display])
+
+        with gr.Tab("Full New UI"):
+            with gr.Row():
+                with gr.Column(scale=3):
+                    gr.Markdown("### Generated Landing Page")
+                    generate_full_ui_btn = gr.Button("Generate Full New UI from Selected Solutions", variant="primary")
+                    refresh_ui_btn = gr.Button("Refresh UI Display")
+                    full_ui_iframe = gr.HTML(label="Generated UI", value="Click Generate to start.")
+
+                with gr.Column(scale=1):
+                    gr.Markdown("### Real-time Adaptation")
+                    ui_chatbot = gr.Chatbot(label="Design Chat")
+                    ui_chat_msg = gr.Textbox(label="Request Modification", placeholder="e.g. Change primary color to emerald...")
+                    ui_chat_send = gr.Button("Send Request")
+
+            generate_full_ui_btn.click(fn=generate_full_ui_call, inputs=[rv_repo_select, rv_branch_select, active_session_state, selected_solutions_json_state], outputs=[full_ui_iframe])
+            refresh_ui_btn.click(fn=poll_for_generated_ui, inputs=[rv_repo_select, rv_branch_select, active_session_state], outputs=[full_ui_iframe])
+            ui_chat_send.click(fn=blablador_chat_adaptation, inputs=[ui_chat_msg, ui_chatbot, active_session_state], outputs=[ui_chatbot, ui_chat_msg])
+
 
         with gr.Tab("System"):
             gr.Markdown("### System Diagnostics & Manual Connection")
