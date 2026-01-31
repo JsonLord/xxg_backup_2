@@ -155,11 +155,11 @@ except ImportError as e:
     print(f"Error importing TinyTroupe: {e}")
 
 # Configuration from environment variables
-GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN") or os.environ.get("GITHUB_API_TOKEN")
-JULES_API_KEY = os.environ.get("JULES_API_KEY")
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN") or os.environ.get("GITHUB_API_TOKEN") or os.environ.get("GITHUB_API_KEY")
+ANALYSIS_API_KEY = os.environ.get("JULES_API_KEY") or os.environ.get("ANALYSIS_API_KEY")
 BLABLADOR_API_KEY = os.environ.get("BLABLADOR_API_KEY")
 BLABLADOR_BASE_URL = "https://api.helmholtz-blablador.fz-juelich.de/v1"
-JULES_API_URL = "https://jules.googleapis.com/v1alpha"
+ANALYSIS_API_URL = "https://jules.googleapis.com/v1alpha"
 
 # GitHub Client
 gh = Github(auth=Auth.Token(GITHUB_TOKEN)) if GITHUB_TOKEN else None
@@ -611,11 +611,11 @@ def start_and_monitor_sessions(personas, tasks, url):
     repo_name = "JsonLord/tiny_web"
     branch_name = "main"
 
-    if not JULES_API_KEY:
-        yield "Error: JULES_API_KEY not set.", ""
+    if not ANALYSIS_API_KEY:
+        yield "Error: Analysis API key not set.", ""
         return
 
-    with open("jules_template.md", "r") as f:
+    with open("analysis_template.md", "r") as f:
         template = f.read()
 
     sessions = []
@@ -630,9 +630,9 @@ def start_and_monitor_sessions(personas, tasks, url):
         prompt = prompt.replace("{{report_id}}", report_id)
         prompt = prompt.replace("{{blablador_api_key}}", BLABLADOR_API_KEY if BLABLADOR_API_KEY else "YOUR_API_KEY")
 
-        # Call Jules API
+        # Call Analysis API
         headers = {
-            "X-Goog-Api-Key": JULES_API_KEY,
+            "X-Goog-Api-Key": ANALYSIS_API_KEY,
             "Content-Type": "application/json"
         }
         data = {
@@ -647,7 +647,7 @@ def start_and_monitor_sessions(personas, tasks, url):
             "title": f"UX Analysis for {persona['name']}"
         }
 
-        response = requests.post(f"{JULES_API_URL}/sessions", headers=headers, json=data)
+        response = requests.post(f"{ANALYSIS_API_URL}/sessions", headers=headers, json=data)
         if response.status_code == 200:
             sessions.append(response.json())
         else:
@@ -659,7 +659,7 @@ def start_and_monitor_sessions(personas, tasks, url):
     while sessions:
         for i, session in enumerate(sessions):
             session_id = session['id']
-            res = requests.get(f"{JULES_API_URL}/sessions/{session_id}", headers=headers)
+            res = requests.get(f"{ANALYSIS_API_URL}/sessions/{session_id}", headers=headers)
             if res.status_code == 200:
                 current_session = res.json()
                 yield f"Monitoring sessions... Status of {current_session.get('title')}: {current_session.get('state', 'UNKNOWN')}", all_reports
@@ -693,7 +693,7 @@ def get_reports_in_branch(repo_full_name, branch_name, filter_type=None):
         repo = gh.get_repo(repo_full_name)
         add_log(f"Scanning branch {branch_name} for reports (filter: {filter_type})...")
         
-        exclude_files = {"jules_template.md", "readme.md", "contributing.md", "license.md"}
+        exclude_files = {"analysis_template.md", "readme.md", "contributing.md", "license.md"}
         
         # Method 1: Check user_experience_reports directory
         reports = []
@@ -916,12 +916,11 @@ def render_slides(repo_full_name, branch_name, report_path):
         
         if os.path.exists(f"{output_dir}/index.html"):
             # Return IFrame pointing to the generated site. 
-            # Use a path relative to the current working directory for Gradio's /file endpoint
-            rel_path = os.path.relpath(f"{output_dir}/index.html", os.getcwd())
-            add_log(f"Slides rendered. Serving from relative path: {rel_path}")
+            # Use absolute path with file= prefix which is robust in Gradio 4
+            abspath = os.path.abspath(f"{output_dir}/index.html")
+            add_log(f"Slides rendered. Serving from: {abspath}")
 
-            # Use 'file={rel_path}' which is more robust in HF Spaces than '/file={abs_path}'
-            return f'<iframe src="file={rel_path}" width="100%" height="600px" frameborder="0"></iframe>'
+            return f'<iframe src="file={abspath}" width="100%" height="600px" frameborder="0"></iframe>'
         else:
             return "Failed to render slides."
             
@@ -965,12 +964,12 @@ def monitor_repo_for_reports():
         return all_discovered_reports
 
 # Gradio UI
-with gr.Blocks() as demo:
-    gr.Markdown("# Jules UX Analysis Orchestrator")
+with gr.Blocks(title="UX Analysis Orchestrator") as demo:
+    gr.Markdown("# UX Analysis Orchestrator")
 
     with gr.Tabs():
-        with gr.Tab("Orchestrator"):
-            gr.Markdown("### Start New Jules Sessions")
+        with gr.Tab("Analysis Orchestrator"):
+            gr.Markdown("### Start New Analysis Sessions")
             with gr.Row():
                 with gr.Column():
                     theme_input = gr.Textbox(label="Theme", placeholder="e.g., Communication, Purchase decisions, Information gathering")
@@ -984,7 +983,7 @@ with gr.Blocks() as demo:
                     task_list_display = gr.JSON(label="Tasks")
                     persona_display = gr.JSON(label="Personas")
 
-            start_session_btn = gr.Button("Start Jules Session", variant="primary")
+            start_session_btn = gr.Button("Start Analysis Session", variant="primary")
             report_output = gr.Markdown(label="Active Session Reports")
 
         with gr.Tab("Report Viewer"):

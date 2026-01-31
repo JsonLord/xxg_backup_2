@@ -1,4 +1,4 @@
-# JULES UX STRATEGIST TEMPLATE (CLIENT-GRADE)
+# UX STRATEGIST TEMPLATE (CLIENT-GRADE)
 
 You are a Senior UX Strategist and Researcher.
 

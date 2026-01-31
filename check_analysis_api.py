@@ -3,10 +3,10 @@ import httpx
 import asyncio
 import json
 
-async def check_jules():
-    api_key = os.environ.get("JULES_API_KEY")
+async def check_analysis():
+    api_key = os.environ.get("ANALYSIS_API_KEY")
     if not api_key:
-        print("JULES_API_KEY not set")
+        print("ANALYSIS_API_KEY not set")
         return
 
     headers = {
@@ -24,4 +24,4 @@ async def check_jules():
             print(f"Error: {e}")
 
 if __name__ == "__main__":
-    asyncio.run(check_jules())
+    asyncio.run(check_analysis())
