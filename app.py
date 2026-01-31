@@ -135,6 +135,8 @@ def setup_mkslides():
 setup_mkslides()
 
 import gradio as gr
+from fastapi import FastAPI
+import uvicorn
 from github import Github, Auth
 import requests
 from openai import OpenAI
@@ -156,7 +158,7 @@ except ImportError as e:
 
 # Configuration from environment variables
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN") or os.environ.get("GITHUB_API_TOKEN") or os.environ.get("GITHUB_API_KEY")
-ANALYSIS_API_KEY = os.environ.get("JULES_API_KEY") or os.environ.get("ANALYSIS_API_KEY")
+ANALYSIS_API_KEY = os.environ.get("ANALYSIS_API_KEY") or os.environ.get("JULES_API_KEY")
 BLABLADOR_API_KEY = os.environ.get("BLABLADOR_API_KEY")
 BLABLADOR_BASE_URL = "https://api.helmholtz-blablador.fz-juelich.de/v1"
 ANALYSIS_API_URL = "https://jules.googleapis.com/v1alpha"
@@ -916,12 +918,11 @@ def render_slides(repo_full_name, branch_name, report_path):
         
         if os.path.exists(f"{output_dir}/index.html"):
             # Return IFrame pointing to the generated site. 
-            # Use absolute path with 'file/' prefix which is standard in Gradio 4+
+            # Use standard Gradio 4 /file= format with absolute path
             abspath = os.path.abspath(f"{output_dir}/index.html")
             add_log(f"Slides rendered successfully: {abspath}")
 
-            # Using 'file/' prefix with absolute path
-            return f'<iframe src="file/{abspath}" width="100%" height="600px" frameborder="0"></iframe>'
+            return f'<iframe src="/file={abspath}" width="100%" height="600px" frameborder="0"></iframe>'
         else:
             add_log(f"ERROR: mkslides finished but {output_dir}/index.html not found.")
             return "Failed to render slides: index.html not found."
@@ -1052,7 +1053,12 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
 
             def sl_update_reports(repo_name, branch_name):
                 reports = get_reports_in_branch(repo_name, branch_name, filter_type="slides")
-                return gr.update(choices=reports, value=reports[0] if reports else None), reports
+                default_val = None
+                if "user_experience_reports/slides" in reports:
+                    default_val = "user_experience_reports/slides"
+                elif reports:
+                    default_val = reports[0]
+                return gr.update(choices=reports, value=default_val), reports
 
             sl_repo_select.change(fn=sl_update_branches, inputs=[sl_repo_select], outputs=[sl_branch_select])
 
@@ -1077,7 +1083,22 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
                 return html, new_idx, counter_text
 
             sl_refresh_branches_btn.click(fn=sl_update_branches, inputs=[sl_repo_select], outputs=[sl_branch_select])
-            sl_branch_select.change(fn=sl_update_reports, inputs=[sl_repo_select, sl_branch_select], outputs=[sl_report_select, all_decks_state])
+
+            sl_branch_select.change(
+                fn=sl_update_reports,
+                inputs=[sl_repo_select, sl_branch_select],
+                outputs=[sl_report_select, all_decks_state]
+            ).then(
+                fn=sl_render_wrapper,
+                inputs=[sl_repo_select, sl_branch_select, sl_report_select, sl_manual_path],
+                outputs=[slideshow_display, carousel_controls]
+            )
+
+            sl_report_select.change(
+                fn=sl_render_wrapper,
+                inputs=[sl_repo_select, sl_branch_select, sl_report_select, sl_manual_path],
+                outputs=[slideshow_display, carousel_controls]
+            )
 
             sl_render_btn.click(fn=sl_render_wrapper, inputs=[sl_repo_select, sl_branch_select, sl_report_select, sl_manual_path], outputs=[slideshow_display, carousel_controls])
 
@@ -1189,5 +1210,19 @@ if __name__ == "__main__":
             print(f"ERROR: GitHub connectivity test failed: {startup_err}")
     print("-----------------------------------------")
 
-    # Allow current directory for file serving, specifically for slides_site_*
-    demo.launch(allowed_paths=[os.getcwd(), os.path.abspath(os.getcwd())])
+    # Wrap with FastAPI for health check and API endpoints
+    fastapi_app = FastAPI()
+
+    @fastapi_app.get("/health")
+    def health():
+        return {"status": "ok"}
+
+    @fastapi_app.get("/api/info")
+    def info():
+        return {"app": "UX Analysis Orchestrator", "version": "1.0.0"}
+
+    # Mount Gradio
+    demo_app = gr.mount_gradio_app(fastapi_app, demo, path="/", allowed_paths=[os.getcwd(), os.path.abspath(os.getcwd())])
+
+    # Run uvicorn
+    uvicorn.run(demo_app, host="0.0.0.0", port=7860)

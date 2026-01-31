@@ -9,13 +9,13 @@ import re
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("mcp-jules")
+logger = logging.getLogger("mcp-analysis")
 
-mcp = FastMCP("jules")
+mcp = FastMCP("analysis")
 
-API_BASE_URL = "https://jules.googleapis.com/v1alpha"
+API_BASE_URL = "https://analysis.googleapis.com/v1alpha"
 
-class JulesClient:
+class AnalysisClient:
     def __init__(self, api_key: str):
         self.api_key = api_key
         self.base_url = API_BASE_URL
@@ -74,10 +74,10 @@ class JulesClient:
             return await self.create_session_cli(prompt, cli_source, branch, title)
 
     async def create_session_cli(self, prompt, source, branch="main", title="API Session"):
-        """Fallback to jules CLI for session creation."""
-        logger.info(f"Using jules CLI to create session for {source}")
+        """Fallback to analysis CLI for session creation."""
+        logger.info(f"Using analysis CLI to create session for {source}")
         cmd = [
-            "jules", "new",
+            "analysis", "new",
             "--repo", source,
             prompt
         ]
@@ -164,7 +164,7 @@ def get_rotated_api_key():
 
 def get_client():
     key = get_rotated_api_key()
-    return JulesClient(key)
+    return AnalysisClient(key)
 
 @mcp.tool()
 async def list_sources():
