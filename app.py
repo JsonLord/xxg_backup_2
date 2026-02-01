@@ -668,9 +668,27 @@ def handle_generate(theme, customer_profile, num_personas, method, example_file,
     except Exception as e:
         yield f"Error during generation: {str(e)}", None, None
 
-def start_and_monitor_sessions(personas, tasks, url):
-    repo_name = "JsonLord/tiny_web"
-    branch_name = "main"
+def check_branch_exists(repo_full_name, branch_name):
+    if not gh: return False
+    try:
+        repo = gh.get_repo(repo_full_name)
+        repo.get_branch(branch_name)
+        return True
+    except:
+        return False
+
+def start_and_monitor_sessions(personas, tasks, url, session_id):
+    repo_name = REPO_NAME
+
+    # Ticketing system: Session ID is used as the branch name for analysis
+    # Buttons only work if the branch exists on GitHub.
+    if not session_id:
+        yield "Error: Session ID (Branch Name) is required for the ticketing system.", "", ""
+        return
+
+    if not check_branch_exists(repo_name, session_id):
+        yield f"Error: Branch '{session_id}' not found on GitHub. Please create it first. (Wait 30 mins if newly created)", "", ""
+        return
 
     if not personas or not tasks:
         yield "Error: Personas or Tasks missing. Please generate them first.", "", ""
@@ -685,8 +703,9 @@ def start_and_monitor_sessions(personas, tasks, url):
 
     sessions = []
     for persona in personas:
-        # Generate unique report ID
-        report_id = str(uuid.uuid4())[:8]
+        # Use provided session_id or append to it if multiple personas?
+        # For simplicity, we use session_id as the report_id too
+        report_id = session_id
         
         # Format prompt
         prompt = template.replace("{{persona_context}}", json.dumps(persona))
@@ -705,11 +724,11 @@ def start_and_monitor_sessions(personas, tasks, url):
             "sourceContext": {
                 "source": f"sources/github/{repo_name}",
                 "githubRepoContext": {
-                    "startingBranch": branch_name
+                    "startingBranch": session_id
                 }
             },
             "automationMode": "AUTO_CREATE_PR",
-            "title": f"UX Analysis for {persona['name']}"
+            "title": f"UX Analysis for {persona['name']} ({session_id})"
         }
 
         response = requests.post(f"{ANALYSIS_API_URL}/sessions", headers=headers, json=data)
@@ -1175,6 +1194,7 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
     gr.Markdown("# UX Analysis Orchestrator")
 
     active_session_state = gr.State("")
+    session_id_sync_list = []
     all_solutions_state = gr.State([])
     selected_solutions_json_state = gr.State("[]")
 
@@ -1240,6 +1260,8 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
                     persona_display = gr.JSON(label="Personas")
 
             start_session_btn = gr.Button("Start Analysis Session", variant="primary")
+            session_id_orch = gr.Textbox(label="Session ID (GitHub Branch Name)", interactive=True, placeholder="Enter a GitHub branch name to start analysis on...")
+            session_id_sync_list.append(session_id_orch)
             report_output = gr.Markdown(label="Active Session Reports")
 
         with gr.Tab("Presentation Carousel"):
@@ -1249,6 +1271,8 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
                 sl_branch_select = gr.Dropdown(label="Branch", choices=get_repo_branches(REPO_NAME))
             
             with gr.Row():
+                session_id_carousel = gr.Textbox(label="Session ID", placeholder="Enter Session ID to pull results...")
+                session_id_sync_list.append(session_id_carousel)
                 sl_refresh_branches_btn = gr.Button("Pull latest results")
 
             sl_terminal_log = gr.Code(label="Connection Log", language="shell", value=f"[SYSTEM] Connected to {REPO_NAME}\n[SYSTEM] Ready to pull results.")
@@ -1267,10 +1291,14 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
             all_decks_state = gr.State([])
             current_deck_idx = gr.State(0)
 
-            def sl_update_branches(repo_name):
+            def sl_update_branches(repo_name, session_id=None):
+                if session_id:
+                    if not check_branch_exists(repo_name, session_id):
+                        return gr.update(), f"[ERROR] Branch '{session_id}' not found. Please wait 30 minutes if newly created."
+
                 branches = get_repo_branches(repo_name)
-                latest = branches[0] if branches else "main"
-                log = f"[SYSTEM] Pulled latest branches from {repo_name}\n[SYSTEM] Current branch: {latest}\n[SYSTEM] Found {len(branches)} branches."
+                latest = session_id if session_id and session_id in branches else (branches[0] if branches else "main")
+                log = f"[SYSTEM] Pulled latest branches from {repo_name}\n[SYSTEM] Target branch: {latest}\n[SYSTEM] Found {len(branches)} branches."
                 return gr.update(choices=branches, value=latest), log
 
             def sl_auto_render(repo, branch):
@@ -1315,7 +1343,7 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
                 counter_text = f"Deck {new_idx + 1} of {len(decks)}: {decks[new_idx]}"
                 return html, new_idx, counter_text
 
-            sl_refresh_branches_btn.click(fn=sl_update_branches, inputs=[sl_repo_select], outputs=[sl_branch_select, sl_terminal_log])
+            sl_refresh_branches_btn.click(fn=sl_update_branches, inputs=[sl_repo_select, session_id_carousel], outputs=[sl_branch_select, sl_terminal_log])
 
             sl_branch_select.change(
                 fn=sl_auto_render,
@@ -1339,6 +1367,8 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
                 rv_branch_select = gr.Dropdown(label="Branch", choices=get_repo_branches(REPO_NAME))
 
             with gr.Row():
+                session_id_rv = gr.Textbox(label="Session ID", placeholder="Enter Session ID to pull results...")
+                session_id_sync_list.append(session_id_rv)
                 rv_refresh_branches_btn = gr.Button("Pull latest results")
 
             rv_terminal_log = gr.Code(label="Connection Log", language="shell", value=f"[SYSTEM] Connected to {REPO_NAME}\n[SYSTEM] Ready to pull results.")
@@ -1370,10 +1400,14 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
 
                     solutions_checkboxes.change(fn=update_selected_solutions, inputs=[solutions_checkboxes, all_solutions_state], outputs=[selected_solutions_json_state])
 
-            def rv_update_branches(repo_name):
+            def rv_update_branches(repo_name, session_id=None):
+                if session_id:
+                    if not check_branch_exists(repo_name, session_id):
+                        return gr.update(), f"[ERROR] Branch '{session_id}' not found. Please wait 30 minutes if newly created."
+
                 branches = get_repo_branches(repo_name)
-                latest = branches[0] if branches else "main"
-                log = f"[SYSTEM] Pulled latest branches from {repo_name}\n[SYSTEM] Current branch: {latest}\n[SYSTEM] Found {len(branches)} branches."
+                latest = session_id if session_id and session_id in branches else (branches[0] if branches else "main")
+                log = f"[SYSTEM] Pulled latest branches from {repo_name}\n[SYSTEM] Target branch: {latest}\n[SYSTEM] Found {len(branches)} branches."
                 return gr.update(choices=branches, value=latest), log
 
             def rv_update_reports(repo_name, branch_name):
@@ -1385,7 +1419,7 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
                 path = manual if manual else selected
                 return get_report_content(repo, branch, path)
 
-            rv_refresh_branches_btn.click(fn=rv_update_branches, inputs=[rv_repo_select], outputs=[rv_branch_select, rv_terminal_log])
+            rv_refresh_branches_btn.click(fn=rv_update_branches, inputs=[rv_repo_select, session_id_rv], outputs=[rv_branch_select, rv_terminal_log])
             rv_branch_select.change(fn=rv_update_reports, inputs=[rv_repo_select, rv_branch_select], outputs=[rv_report_select])
             rv_load_report_btn.click(fn=rv_load_wrapper, inputs=[rv_repo_select, rv_branch_select, rv_report_select, rv_manual_path], outputs=[rv_report_viewer])
 
@@ -1396,6 +1430,8 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
                 tl_branch_select = gr.Dropdown(label="Branch", choices=get_repo_branches(REPO_NAME))
 
             with gr.Row():
+                session_id_tl = gr.Textbox(label="Session ID", placeholder="Enter Session ID to pull results...")
+                session_id_sync_list.append(session_id_tl)
                 tl_refresh_btn = gr.Button("Pull latest results")
 
             tl_terminal_log = gr.Code(label="Connection Log", language="shell", value=f"[SYSTEM] Connected to {REPO_NAME}\n[SYSTEM] Ready to pull results.")
@@ -1406,14 +1442,18 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
 
             tl_viewer = gr.Markdown(label="Thought Log Content")
 
-            def tl_update_logs(repo, branch):
+            def tl_update_logs(repo, branch, session_id=None):
+                if session_id:
+                    if not check_branch_exists(repo, session_id):
+                        return gr.update(), f"[ERROR] Branch '{session_id}' not found. Please wait 30 minutes if newly created."
+
                 branches = get_repo_branches(repo)
-                latest = branches[0] if branches else "main"
-                log = f"[SYSTEM] Pulled latest branches from {repo}\n[SYSTEM] Current branch: {latest}"
+                latest = session_id if session_id and session_id in branches else (branch if branch else (branches[0] if branches else "main"))
+                log = f"[SYSTEM] Pulled latest branches from {repo}\n[SYSTEM] Target branch: {latest}"
                 logs = get_thought_logs_from_repo(repo, latest)
                 return gr.update(choices=logs, value=logs[0] if logs else None), log
 
-            tl_refresh_btn.click(fn=tl_update_logs, inputs=[tl_repo_select, tl_branch_select], outputs=[tl_log_select, tl_terminal_log])
+            tl_refresh_btn.click(fn=tl_update_logs, inputs=[tl_repo_select, tl_branch_select, session_id_tl], outputs=[tl_log_select, tl_terminal_log])
             tl_load_btn.click(fn=get_report_content, inputs=[tl_repo_select, tl_branch_select, tl_log_select], outputs=[tl_viewer])
 
         with gr.Tab("Average User Journey Heatmaps"):
@@ -1432,6 +1472,9 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
 
         with gr.Tab("Full New UI"):
             with gr.Row():
+                session_id_ui = gr.Textbox(label="Jules Session ID (sess-xxxx) or Branch Name", placeholder="Enter Session ID or Branch Name to generate/refine UI...")
+                session_id_sync_list.append(session_id_ui)
+            with gr.Row():
                 with gr.Column(scale=3):
                     gr.Markdown("### Generated Landing Page")
                     generate_full_ui_btn = gr.Button("Generate Full New UI from Selected Solutions", variant="primary")
@@ -1444,9 +1487,9 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
                     ui_chat_msg = gr.Textbox(label="Request Modification", placeholder="e.g. Change primary color to emerald...")
                     ui_chat_send = gr.Button("Send Request")
 
-            generate_full_ui_btn.click(fn=generate_full_ui_call, inputs=[rv_repo_select, rv_branch_select, active_session_state, selected_solutions_json_state, url_input], outputs=[full_ui_iframe])
-            refresh_ui_btn.click(fn=poll_for_generated_ui, inputs=[rv_repo_select, rv_branch_select, active_session_state], outputs=[full_ui_iframe])
-            ui_chat_send.click(fn=blablador_chat_adaptation, inputs=[ui_chat_msg, ui_chatbot, active_session_state], outputs=[ui_chatbot, ui_chat_msg])
+            generate_full_ui_btn.click(fn=generate_full_ui_call, inputs=[rv_repo_select, rv_branch_select, session_id_ui, selected_solutions_json_state, url_input], outputs=[full_ui_iframe])
+            refresh_ui_btn.click(fn=poll_for_generated_ui, inputs=[rv_repo_select, rv_branch_select, session_id_ui], outputs=[full_ui_iframe])
+            ui_chat_send.click(fn=blablador_chat_adaptation, inputs=[ui_chat_msg, ui_chatbot, session_id_ui], outputs=[ui_chatbot, ui_chat_msg])
 
 
         with gr.Tab("System"):
@@ -1562,9 +1605,22 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
 
     start_session_btn.click(
         fn=start_and_monitor_sessions,
-        inputs=[persona_display, task_list_display, url_input],
+        inputs=[persona_display, task_list_display, url_input, session_id_orch],
         outputs=[status_output, report_output, active_session_state]
+    ).then(
+        fn=lambda x: [x] * len(session_id_sync_list),
+        inputs=[active_session_state],
+        outputs=session_id_sync_list
     )
+
+    # Session ID Sync
+    def sync_session_ids(val):
+        return [val] * len(session_id_sync_list)
+
+    for sid in session_id_sync_list:
+        if sid.interactive:
+            sid.change(fn=sync_session_ids, inputs=[sid], outputs=session_id_sync_list)
+            sid.change(fn=lambda x: x, inputs=[sid], outputs=[active_session_state])
 
 if __name__ == "__main__":
     # Startup connectivity check
