@@ -992,6 +992,25 @@ def get_solutions_from_repo(repo_full_name, branch_name):
         add_log(f"Error fetching solutions: {e}")
         return []
 
+def get_thought_logs_from_repo(repo_full_name, branch_name):
+    if not gh or not repo_full_name or not branch_name:
+        return []
+    try:
+        repo = gh.get_repo(repo_full_name)
+        add_log(f"Scanning branch {branch_name} for thought logs...")
+        try:
+            contents = repo.get_contents("user_experience_reports/thought_logs", ref=branch_name)
+            logs = []
+            for c in contents:
+                if c.name.endswith(".md"):
+                    logs.append(c.path)
+            return logs
+        except:
+            return []
+    except Exception as e:
+        add_log(f"Error fetching thought logs: {e}")
+        return []
+
 def generate_agents_prompt(selected_solutions_json):
     if not selected_solutions_json:
         return "No solutions selected."
@@ -1144,14 +1163,38 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
                     profile_input = gr.Textbox(label="Customer Profile Description", placeholder="Describe the target customer...")
                     num_personas_input = gr.Number(label="Number of Personas", value=1, precision=0)
                     persona_method = gr.Radio(["Example Persona", "TinyTroupe", "DeepPersona"], label="Persona Generation Method", value="TinyTroupe")
-                    example_persona_select = gr.Dropdown(label="Select Example Persona", choices=get_example_personas(), visible=False)
+
+                    with gr.Column(visible=False) as example_persona_col:
+                        gr.Markdown("#### Pre-configured Personas")
+
+                        def update_persona_preview(file):
+                            if not file: return ""
+                            personas = select_or_create_personas("", "", 1, "Example Persona", file)
+                            if personas:
+                                return f"**Name**: {personas[0]['name']}\n\n{personas[0]['minibio']}"
+                            return "Error loading preview."
+
+                        example_personas = get_example_personas()
+                        initial_persona = example_personas[0] if example_personas else None
+                        example_persona_select = gr.Dropdown(
+                            label="Select Example Persona",
+                            choices=example_personas,
+                            value=initial_persona
+                        )
+                        example_persona_preview = gr.Markdown(
+                            label="Persona Preview",
+                            value=update_persona_preview(initial_persona) if initial_persona else ""
+                        )
+
+                        example_persona_select.change(fn=update_persona_preview, inputs=[example_persona_select], outputs=[example_persona_preview])
+
                     url_input = gr.Textbox(label="Target URL", value="https://example.com")
                     generate_btn = gr.Button("Generate Personas & Tasks")
 
                     def update_method_visibility(method):
                         return gr.update(visible=(method == "Example Persona"))
 
-                    persona_method.change(fn=update_method_visibility, inputs=[persona_method], outputs=[example_persona_select])
+                    persona_method.change(fn=update_method_visibility, inputs=[persona_method], outputs=[example_persona_col])
 
                 with gr.Column():
                     status_output = gr.Textbox(label="Status", interactive=False)
@@ -1298,6 +1341,26 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
             rv_branch_select.change(fn=rv_update_reports, inputs=[rv_repo_select, rv_branch_select], outputs=[rv_report_select])
             rv_load_report_btn.click(fn=rv_load_wrapper, inputs=[rv_repo_select, rv_branch_select, rv_report_select, rv_manual_path], outputs=[rv_report_viewer])
 
+        with gr.Tab("Persona Thought Logs"):
+            gr.Markdown("### Persona Internal Monologue & Analysis")
+            with gr.Row():
+                tl_repo_select = gr.Dropdown(label="Repository", choices=[REPO_NAME], value=REPO_NAME, interactive=False)
+                tl_branch_select = gr.Dropdown(label="Branch", choices=get_repo_branches(REPO_NAME))
+                tl_refresh_btn = gr.Button("Scan for Logs")
+
+            with gr.Row():
+                tl_log_select = gr.Dropdown(label="Select Thought Log", choices=[])
+                tl_load_btn = gr.Button("Load Log")
+
+            tl_viewer = gr.Markdown(label="Thought Log Content")
+
+            def tl_update_logs(repo, branch):
+                logs = get_thought_logs_from_repo(repo, branch)
+                return gr.update(choices=logs, value=logs[0] if logs else None)
+
+            tl_refresh_btn.click(fn=tl_update_logs, inputs=[tl_repo_select, tl_branch_select], outputs=[tl_log_select])
+            tl_load_btn.click(fn=get_report_content, inputs=[tl_repo_select, tl_branch_select, tl_log_select], outputs=[tl_viewer])
+
         with gr.Tab("Average User Journey Heatmaps"):
             gr.Markdown("### Heatmaps")
             refresh_heatmaps_btn = gr.Button("Refresh Heatmaps")
@@ -1394,6 +1457,9 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
         with gr.Tab("Alternative Styling"):
             gr.Markdown("### Design Automation & Iteration")
             gr.Markdown("We are working with the team behind https://github.com/onlook-dev/onlook to automate fast design iterations based on the user test reports. Stay updated on changes to the Github Page by following it.")
+
+    # Persona Preview Handler (moved to a safe place if not already there)
+    # Actually it's inside the Tab block in previous edit.
 
     # Event handlers
     generate_btn.click(

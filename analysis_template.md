@@ -29,7 +29,12 @@ You will simulate a persona performing tasks, but the final output must read lik
 3. **Heatmap Generation**: After completing all tasks, generate "Average User Journey Heatmaps" by overlaying the recorded interaction points onto screenshots of the relevant pages.
    - Save these heatmap images as PNG files in `/user_experience_reports/heatmaps/`.
    - Name them descriptively, e.g., `heatmap_task1.png`, `average_journey_heatmap.png`.
-4. **Problem Identification & UI Solutions**: For every UX problem identified during the tasks:
+4. **Thought Logs & Text Analysis**: Throughout the simulation, maintain a detailed record of your persona's internal monologue and decision-making process.
+   - Save these logs to `/user_experience_reports/thought_logs/thought_log_{{report_id}}.md`.
+   - Format the logs in a "nice to follow" style, using callouts or blockquotes for internal thoughts.
+   - Add **annotations and comments** for particularly interesting passages that were crucial in guiding your analysis.
+   - Include a section for **text analysis** (e.g., sentiment shifts, keyword frequency in thoughts, cognitive load peaks) to help a human reviewer follow your psychological state during the test.
+5. **Problem Identification & UI Solutions**: For every UX problem identified during the tasks:
    - Categorize the problem.
    - Propose a "Better UI" solution.
    - Provide a functional code snippet (HTML/CSS/JS) for the improved component.
@@ -454,7 +459,7 @@ Cards must be reusable in mkslides.
 
 Once complete:
 
-Confirm report_{{report_id}}.md and individual slide files in `/user_experience_reports/slides/` are written.
+Confirm report_{{report_id}}.md, individual slide files in `/user_experience_reports/slides/`, and the thought log in `/user_experience_reports/thought_logs/` are written.
 
 Session will open PR automatically.
 
@@ -465,57 +470,3 @@ REMEMBER:
 You are not documenting UX.
 
 You are diagnosing product failure and prescribing recovery.
-
-
-CONTEXT... 
-
-UX Report: Research Insights and Best Practices
-Usability Testing Fundamentals
-
-Usability (user) testing is an essential UX research method for uncovering design problems and user needs. Even the best designers cannot foresee all usability issues without observing real users; iterative design driven by testing is the only reliable way to get UX right. In a typical moderated test, a facilitator gives realistic tasks (e.g. finding a product or completing a form) to target users and observes their behavior. Testing with just a few users (often 5 participants) can reveal the majority of common problems in an interface. Testing sessions also benefit from think-aloud protocols, where participants narrate their thoughts, helping researchers capture motivations and confusions in context. Key outcomes from usability tests include identifying pain points (where users struggle), and gathering actionable feedback for design improvements.
-
-Goals: Find usability issues, understand user behavior, and uncover improvement opportunities.
-
-Core elements: Facilitator, tasks, and realistic participants (often chosen as true target users or close proxies).
-
-Benefits: Early testing saves time and money — regular user testing “identifies usability issues early, reduces costly rework, and helps create products that meet real user needs”.
-
-Cognitive & Perception Principles (Laws of UX)
-
-Human perception and cognition impose natural limits and biases that UX design must respect. The Laws of UX summarize many such principles. For example, Hick’s Law shows that decision time increases with the number and complexity of choices, so presenting too many options can overwhelm users. Similarly, Miller’s Law reminds us that most people can only hold about 7±2 items in working memory; complex menus or forms should therefore be chunked into smaller, meaningful groups. Jakob’s Law emphasizes consistency: users spend most of their time on other sites and prefer familiar layouts and patterns. Other relevant laws include the Serial Position Effect (users recall first and last items best) and the Von Restorff Effect (distinct items are more memorable). Designing with these in mind (e.g. grouping related elements, reducing choice overload, using standard UI patterns) enhances usability.
-
-Minimize choices: Use Hick’s Law to limit options and guide users step-by-step.
-
-Chunk information: Break content into small groups (about 5–9 items) to fit working memory.
-
-Leverage familiarity: Follow common design patterns so users can rely on existing mental models.
-
-Minimizing Cognitive Load
-
-UX design should minimize users’ mental effort. The total cognitive load (the brain’s processing demand) affects how easily users complete tasks. Designers cannot increase human “brain power,” so interfaces must be as clear and simple as possible. NN/g outlines key guidelines:
-
-Avoid visual clutter: Remove redundant links, irrelevant images, and fancy typography that don’t serve a clear purpose. Clutter forces users to sift through distractions, increasing errors and frustration.
-
-Use familiar conventions: “Build on existing mental models”. Label interfaces and arrange layouts using patterns users already know (e.g. common navigation positions, iconography). This reduces the learning required and lets users focus on content, not on deciphering the UI.
-
-Offload work: Wherever possible, reduce memory and decision load by offloading tasks. For example, provide defaults, autofill fields, reuse previously entered information, or use visual aids like images or progress indicators. Each element offloaded frees up mental resources for the user’s actual goal.
-
-Together, these practices ensure that “user attention is a precious resource” which should not be wasted on unnecessary complexity. They also improve the flow of the experience, keeping users engaged and reducing abandonment.
-
-Measuring UX ROI & Metrics
-
-UX improvements have clear business value. Poor usability frustrates users and hits the bottom line: one study found 60% of consumers abandon purchases due to poor UX, costing businesses tens of thousands annually. Good UX drives satisfaction and loyalty (increasing revenue) and even reduces support costs by minimizing user errors and confusion. The ROI of UX research can be quantified via metrics like conversion rates, bounce/abandonment rates, development costs saved, and customer satisfaction (NPS, CSAT). For example, improving form flow may raise conversion, while fixing usability issues early saves expensive rework later.
-
-Key ROI takeaways:
-
-Conversion & Retention: A smoother UX boosts conversions (purchases, sign-ups) and retention, directly impacting revenue.
-
-Reduced Costs: Fewer usability issues mean less money spent on fixes, support tickets, and lost development cycles. (Neglecting UX leads to “higher development costs, lost revenue, [and] lower customer retention”.)
-
-Measurable Outcomes: Tie UX tests to KPIs. Track behavior metrics (task success, time-on-task, abandonment) and satisfaction scores (NPS, CSAT, SUS) pre- and post-improvement. Even qualitative insights can be linked to business goals by showing, for instance, that fixing a pain point reduces drop-off.
-
-Persona-Driven Journeys & Testing
-
-User journey mapping and persona-focused testing ensure the UX report captures real customer paths. Start by defining key personas and mapping their typical flow through the site (e.g. landing page → exploration → action). Then look for friction or unexpected shifts. For instance, Nielsen Norman advises identifying where user expectations aren’t met. If a promotional ad promised one thing but the landing page delivers another, users hit a “pain point” of unmet expectations. Likewise, watch for channel transition breaks: a common error is linking an ad or email CTA to a generic homepage instead of a specific landing page. This forces users to re-search and often leads to drop-off.
-
-In testing, use persona-based and scenario-based methods. Persona-based tests let you tailor tasks to a user group’s goals (e.g. a senior citizen looking up medical information), while scenario-based tests focus on specific interactions (like completing a sign-up flow). Additionally, exploratory testing—letting users freely browse as they would—can uncover unanticipated issues. Collect qualitative feedback at each step, and annotate the journey map with emotion or effort levels. Insights include identifying unnecessary touchpoints (steps that can be streamlined) and high-friction transitions (e.g. the user wanted mobile vs. desktop, or a page redirect that confuses them). Testing should simulate real use: if our personas include elders, do tests with older participants to see how age-related factors come into play.
