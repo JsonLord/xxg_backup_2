@@ -130,6 +130,18 @@ REPO_NAME = "JsonLord/tiny_web"
 POOL_REPO_NAME = "JsonLord/agent-notes"
 POOL_PATH = "PersonaPool"
 
+# Better summaries for example personas
+BETTER_SUMMARIES = {
+    "Friedrich_Wolf.agent.json": "A meticulous German architect at Awesome Inc. He focuses on standardizing apartment designs, favoring quality over cost, and can be confrontational when challenged.",
+    "Lila.agent.json": "A freelance linguist from Paris specializing in NLP. She is highly analytical, creative, and excels at anticipating user behavior from ambiguous data.",
+    "Oscar.agent.json": "A German architect at Awesome Inc. who balances professional excellence with a witty sense of humor. He is detail-oriented and dedicated to sustainable design.",
+    "Sophie_Lefevre.agent.json": "A creative professional likely focused on the aesthetic and emotional aspects of design and user experience.",
+    "Marcos.agent.json": "A technically-minded individual who prioritizes efficiency and robust, logical solutions in the products he uses.",
+    "Lisa.agent.json": "A standard user persona interested in efficiency and clear communication.",
+    "Jane_Smith.md": "Standard, versatile persona representing a broad range of consumer behaviors and expectations.",
+    "John_Doe.md": "Standard, versatile persona representing a broad range of consumer behaviors and expectations."
+}
+
 # Global state for processed reports
 processed_prs = set()
 all_discovered_reports = ""
@@ -306,19 +318,26 @@ def select_or_create_personas(theme, customer_profile, num_personas, force_metho
             if example_file.endswith(".json"):
                 with open(path, "r") as f:
                     data = json.load(f)
+
+                name = data.get("name") or data.get("persona", {}).get("name") or "Unknown"
+                bio = BETTER_SUMMARIES.get(example_file)
+                if not bio:
+                    bio = data.get("mental_faculties", [{}])[0].get("context") if "mental_faculties" in data else "An example persona."
+
                 # Adapt TinyTroupe format to our internal format
                 persona = {
-                    "name": data.get("name", "Unknown"),
-                    "minibio": data.get("mental_faculties", [{}])[0].get("context", "An example persona.") if "mental_faculties" in data else "An example persona.",
+                    "name": name,
+                    "minibio": bio,
                     "persona": data
                 }
             else: # .md
                 with open(path, "r") as f:
                     content = f.read()
                 name = example_file.replace(".md", "").replace("_", " ")
+                bio = BETTER_SUMMARIES.get(example_file) or content
                 persona = {
                     "name": name,
-                    "minibio": content,
+                    "minibio": bio,
                     "persona": {"name": name, "background": content}
                 }
             return [persona] * int(num_personas)
@@ -1184,7 +1203,7 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
                                     occ = pd.get('occupation', {}).get('title', pd.get('persona', {}).get('occupation', {}).get('title', 'N/A'))
                                     summary += f"**Age**: {age} | **Occupation**: {occ}\n\n"
 
-                                summary += f"**Summary**: {bio[:300]}..." if len(bio) > 300 else f"**Summary**: {bio}"
+                                summary += f"**Summary**: {bio}"
                                 return summary
                             return "Error loading preview."
 
