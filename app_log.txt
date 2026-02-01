@@ -1,0 +1,222 @@
+INFO:     Started server process [60554]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:7860 (Press CTRL+C to quit)
+TinyTroupe patched to handle 502 errors with 35s wait and parallel retries.
+
+!!!!
+DISCLAIMER: TinyTroupe relies on Artificial Intelligence (AI) models to generate content.
+The AI models are not perfect and may produce inappropriate or inacurate results.
+For any serious or consequential use, please review the generated content before using it.
+!!!!
+
+Looking for default config on: /app/external/TinyTroupe/tinytroupe/utils/../config.ini
+Found custom config on: /app/config.ini
+TinyTroupe version: unknown
+Current date and time (local): 2026-02-01 18:11:31
+Current date and time (UTC):   2026-02-01 18:11:31
+
+=================================
+Current TinyTroupe configuration
+=================================
+[OpenAI]
+api_type = helmholtz-blablador
+azure_api_version = 2023-05-15
+blablador_endpoint = https://api.helmholtz-blablador.fz-juelich.de/v1
+model = alias-large
+reasoning_model = alias-large
+embedding_model = text-embedding-3-small
+max_tokens = 32000
+temperature = 1.5
+top_p = 1.0
+freq_penalty = 0.1
+presence_penalty = 0.1
+timeout = 480
+max_attempts = 5
+waiting_time = 1
+exponential_backoff_factor = 5
+reasoning_effort = high
+cache_api_calls = False
+cache_file_name = openai_api_cache.pickle
+max_content_display_length = 4000
+
+[Simulation]
+parallel_agent_generation = True
+parallel_agent_actions = True
+rai_harmful_content_prevention = True
+rai_copyright_infringement_prevention = True
+
+[Cognition]
+enable_memory_consolidation = True
+min_episode_length = 15
+max_episode_length = 50
+episodic_memory_fixed_prefix_length = 10
+episodic_memory_lookback_length = 20
+
+[ActionGenerator]
+max_attempts = 2
+enable_quality_checks = False
+enable_regeneration = True
+enable_direct_correction = False
+enable_quality_check_for_persona_adherence = True
+enable_quality_check_for_selfconsistency = False
+enable_quality_check_for_fluency = False
+enable_quality_check_for_suitability = False
+enable_quality_check_for_similarity = False
+continue_on_failure = True
+quality_threshold = 5
+
+[Logging]
+loglevel = INFO
+
+TinyTroupe imported successfully
+[18:11:35] Loading example persona from Friedrich_Wolf.agent.json...
+[18:11:35] Fetching branches for JsonLord/tiny_web...
+[18:11:35] ERROR: GitHub client is None.
+[18:11:35] Fetching branches for JsonLord/tiny_web...
+[18:11:35] ERROR: GitHub client is None.
+[18:11:35] Fetching branches for JsonLord/tiny_web...
+[18:11:35] ERROR: GitHub client is None.
+--- STARTUP GITHUB CONNECTIVITY CHECK ---
+Token Source: None
+ERROR: No GitHub token found in GITHUB_TOKEN or GITHUB_API_TOKEN.
+-----------------------------------------
+INFO:     127.0.0.1:42578 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42578 - "GET /assets/index-B5Zu_GVg.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42594 - "GET /assets/index-DjiShSXF.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42594 - "GET /assets/svelte/svelte_svelte.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42578 - "GET /assets/svelte/svelte_animate.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42604 - "GET /assets/svelte/svelte_attachments.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42636 - "GET /assets/svelte/svelte_internal_flags_async.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42608 - "GET /assets/svelte/svelte_easing.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42578 - "GET /assets/svelte/svelte_internal_flags_tracing.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42620 - "GET /assets/svelte/svelte_internal_client.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42594 - "GET /assets/svelte/svelte_internal_flags_legacy.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42636 - "GET /assets/svelte/svelte_legacy.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42578 - "GET /assets/svelte/svelte_reactivity.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42608 - "GET /assets/svelte/svelte_motion.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42620 - "GET /assets/svelte/svelte_server.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42604 - "GET /assets/svelte/svelte_internal_server.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42594 - "GET /assets/svelte/svelte_reactivity_window.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42620 - "GET /assets/svelte/svelte_events.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42636 - "GET /assets/svelte/svelte_store.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42594 - "GET /assets/svelte/legacy-client-zNO_yntr.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42608 - "GET /assets/svelte/index-B0zdmtA4.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42578 - "GET /assets/svelte/svelte_transition.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42604 - "GET /assets/svelte/index-6-3S3c88.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42594 - "GET /assets/svelte/constants-BTL-klwN.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42578 - "GET /assets/svelte/utils-Bmu7F6be.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42620 - "GET /assets/svelte/snippet-B7Rg6G9D.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42636 - "GET /assets/svelte/custom-element-N2TeiOiC.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42604 - "GET /assets/svelte/validate-khlEg3pd.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42608 - "GET /assets/svelte/attributes-BObN4qe9.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42594 - "GET /assets/svelte/loop-CiZ6Mtf9.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42620 - "GET /assets/svelte/index-utLXTo0e.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42636 - "GET /assets/svelte/escaping-CBnpiEl5.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42578 - "GET /assets/svelte/utils-CeSFTyv7.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42604 - "GET /assets/svelte/media-query-D37ajmZt.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42608 - "GET /assets/svelte/reactive-value-o-Ihm_Cp.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42594 - "GET /assets/svelte/hydration-nC5IHVVc.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42604 - "GET /assets/i18n-BHxvmanQ.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42578 - "GET /assets/StreamingBar-BCIMpGXo.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42594 - "GET /assets/Index-BRjrOZ4Y.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42620 - "GET /assets/MarkdownCode-DBmitoTT.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42608 - "GET /assets/i18n-B4hKvn1K.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42636 - "GET /assets/ScrollFade-Z5OOjlGL.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42604 - "GET /assets/MarkdownCode-BoA7s7hW.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42578 - "GET /assets/ScrollFade--X35ErLD.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42594 - "GET /assets/StreamingBar-K0YZHDYh.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42636 - "GET /assets/prism-python-B0Zan1LT.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42620 - "GET /assets/Index-CI7BqPz-.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42608 - "GET /assets/index-Be0Bc_Z3.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42604 - "GET /assets/init.svelte-Cw9DJq2D.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42594 - "GET /assets/utils.svelte-kG009vb9.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42578 - "GET /assets/index-tFQomdd2.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42594 - "GET /theme.css?v=9c67fa08317f3b9a67ff3d434d2d7b2e5cd608719ba3870375a097fe38a96663 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42578 - "GET /gradio_api/heartbeat/8qt7wbe1556 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42636 - "GET /assets/Blocks-CXVCGwNW.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42608 - "GET /assets/state.svelte-DFm6rEHb.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42604 - "GET /assets/Blocks-VSle3shO.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42636 - "GET /assets/Index-BDcHJDzf.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42594 - "GET /assets/Index-DX0bfe9w.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42620 - "GET /assets/Example-D94zUedn.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42608 - "GET /assets/Index.svelte_svelte_type_style_lang-BdRVTW9S.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42604 - "GET /assets/Index-h7PR9ySa.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42636 - "GET /assets/Example-CgIc4GLa.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42604 - "GET /assets/BaseForm-uUC7FH4e.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42608 - "GET /assets/Index-BijVyRsD.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42594 - "GET /assets/Walkthrough-CJf9hODv.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42620 - "GET /assets/Index-Ds3FAhOq.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42636 - "GET /assets/Index-cY7HT1Ac.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42604 - "GET /assets/Example-Cvv6PwrD.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42620 - "GET /assets/Example-DWDv4qx4.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42608 - "GET /assets/Index-B5AH0EoL.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42594 - "GET /assets/Index-CTDY4JGM.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42636 - "GET /assets/Index-BL_HMluy.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42620 - "GET /assets/Index--Uz_kS2s.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42604 - "GET /assets/Example-BeU1J4ps.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42594 - "GET /assets/ImagePreview-CCVfwC4m.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42636 - "GET /assets/Button-BZ4d-rtD.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42608 - "GET /assets/Image-Da_XA0w6.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42620 - "GET /assets/JSON-BjG2a1Vu.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42636 - "GET /assets/HTML-BeG9Dlb0.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42604 - "GET /assets/Example-BK-tWmkG.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42608 - "GET /assets/Example-BG5zdIqX.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42594 - "GET /assets/Index-wZDUWKrz.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42620 - "GET /assets/Index-5RnUXY9l.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42608 - "GET /assets/Video-emdvV6JL.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42636 - "GET /assets/Index-Czv6Lgei.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42594 - "GET /assets/Gallery-DJhld1Jx.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42604 - "GET /assets/ModifyUpload-C2I0h_eD.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42594 - "GET /assets/Index-Dpdel1G9.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42604 - "GET /assets/Example-CA1DPrcM.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42608 - "GET /assets/Index-DiuLlPU9.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42620 - "GET /assets/Example-CbN4r5yx.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42636 - "GET /assets/Example-CZSJmqDf.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42608 - "GET /assets/Index-Bx__pFag.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42604 - "GET /assets/Index-B80bIer5.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42636 - "GET /assets/Walkthrough-BGVrgc3k.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42594 - "GET /assets/Index-GU6uSqsH.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42620 - "GET /assets/Index-B5xYZxn_.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42594 - "GET /assets/Index-CMgzzOzq.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42604 - "GET /assets/Index-B9Mfj82s.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42608 - "GET /assets/Index-DWLmPDs-.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42620 - "GET /assets/BaseForm-Cq4NTR3O.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42636 - "GET /assets/Index-CtqVze3K.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42636 - "GET /assets/Index-57Yz1g8m.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42608 - "GET /assets/Index-B3S4zA-B.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42620 - "GET /assets/Example-Cf5LgY5L.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42604 - "GET /assets/Index-CuT6gFgC.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42594 - "GET /assets/Example-gF45j9DF.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42604 - "GET /assets/Button-Df8YIieX.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42608 - "GET /assets/Example-BY9hq5K4.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42620 - "GET /assets/Index-DnpuCmGa.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42636 - "GET /assets/Image-Bdf4wQSw.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42594 - "GET /assets/ImagePreview-DKUn6ibw.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42604 - "GET /assets/ShareButton-803mPI0v.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42594 - "GET /assets/Index-CLTan4U0.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42620 - "GET /assets/Index-C-ZBzIIb.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42636 - "GET /assets/JSON-a1dmng2E.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42608 - "GET /assets/FullscreenButton-DwvGFBPZ.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42604 - "GET /assets/Example-DYWwzfR4.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42608 - "GET /assets/Example-DaRf_1sj.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42620 - "GET /assets/Index-C2ShzOs2.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42604 - "GET /assets/Index-C95nnaqU.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42636 - "GET /assets/HTML-DUEGTw-U.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42594 - "GET /assets/Index-DZWAQVP7.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42604 - "GET /assets/Video-BrnW2L40.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42594 - "GET /assets/Example-CPmG5Ezd.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42636 - "GET /assets/Index-1f4oQflC.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42608 - "GET /assets/Gallery-CqdQ5D_c.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42620 - "GET /assets/ModifyUpload-DNtVAL0c.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42608 - "GET /assets/Example-CR6Oggaq.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42594 - "GET /assets/Index-Cvikf8L_.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42636 - "GET /assets/Example-1lv5JGKJ.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42620 - "GET /assets/Index-BIENH2Yo.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42608 - "GET /assets/index-CnqicUFC.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42594 - "GET /assets/Index-DWLhyMbR.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42594 - "POST /gradio_api/queue/join HTTP/1.1" 200 OK
+[18:11:47] Forcing TinyTroupe generation...
+[18:11:47] Generating 1 personas from harvesthealth/tiny_factory...
+INFO:     127.0.0.1:42604 - "GET /static/fonts/IBMPlexMono/IBMPlexMono-Regular.woff2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42594 - "GET /gradio_api/queue/data?session_hash=8qt7wbe1556 HTTP/1.1" 200 OK
