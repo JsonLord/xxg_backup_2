@@ -1171,7 +1171,21 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
                             if not file: return ""
                             personas = select_or_create_personas("", "", 1, "Example Persona", file)
                             if personas:
-                                return f"**Name**: {personas[0]['name']}\n\n{personas[0]['minibio']}"
+                                p = personas[0]
+                                name = p.get('name', 'Unknown')
+                                bio = p.get('minibio', '')
+
+                                # Better summary logic
+                                summary = f"### Persona: {name}\n"
+
+                                if isinstance(p.get('persona'), dict):
+                                    pd = p['persona']
+                                    age = pd.get('age', pd.get('persona', {}).get('age', 'N/A'))
+                                    occ = pd.get('occupation', {}).get('title', pd.get('persona', {}).get('occupation', {}).get('title', 'N/A'))
+                                    summary += f"**Age**: {age} | **Occupation**: {occ}\n\n"
+
+                                summary += f"**Summary**: {bio[:300]}..." if len(bio) > 300 else f"**Summary**: {bio}"
+                                return summary
                             return "Error loading preview."
 
                         example_personas = get_example_personas()
@@ -1206,13 +1220,17 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
 
         with gr.Tab("Presentation Carousel"):
             gr.Markdown("### View Presentation Slides")
-            with gr.Row():
+            with gr.Row(visible=False):
                 sl_repo_select = gr.Dropdown(label="Repository", choices=[REPO_NAME], value=REPO_NAME, interactive=False)
                 sl_branch_select = gr.Dropdown(label="Branch", choices=get_repo_branches(REPO_NAME))
-                sl_refresh_branches_btn = gr.Button("Refresh Branches")
             
             with gr.Row():
-                sl_status_display = gr.Markdown("Select a branch to discover slides.")
+                sl_refresh_branches_btn = gr.Button("Pull latest results")
+
+            sl_terminal_log = gr.Code(label="Connection Log", language="bash", value=f"[SYSTEM] Connected to {REPO_NAME}\n[SYSTEM] Ready to pull results.")
+
+            with gr.Row():
+                sl_status_display = gr.Markdown("Click 'Pull latest results' to discover slides.")
                 sl_render_all_btn = gr.Button("Start Carousel", variant="primary")
 
             with gr.Row(visible=False) as carousel_controls:
@@ -1228,7 +1246,8 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
             def sl_update_branches(repo_name):
                 branches = get_repo_branches(repo_name)
                 latest = branches[0] if branches else "main"
-                return gr.update(choices=branches, value=latest)
+                log = f"[SYSTEM] Pulled latest branches from {repo_name}\n[SYSTEM] Current branch: {latest}\n[SYSTEM] Found {len(branches)} branches."
+                return gr.update(choices=branches, value=latest), log
 
             def sl_auto_render(repo, branch):
                 reports = get_reports_in_branch(repo, branch, filter_type="slides")
@@ -1254,7 +1273,7 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
 
                 return status_text, reports, html, carousel_visible, idx, counter_text
 
-            sl_repo_select.change(fn=sl_update_branches, inputs=[sl_repo_select], outputs=[sl_branch_select])
+            sl_repo_select.change(fn=sl_update_branches, inputs=[sl_repo_select], outputs=[sl_branch_select, sl_terminal_log])
 
             def start_carousel(repo, branch, decks):
                 if not decks:
@@ -1272,7 +1291,7 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
                 counter_text = f"Deck {new_idx + 1} of {len(decks)}: {decks[new_idx]}"
                 return html, new_idx, counter_text
 
-            sl_refresh_branches_btn.click(fn=sl_update_branches, inputs=[sl_repo_select], outputs=[sl_branch_select])
+            sl_refresh_branches_btn.click(fn=sl_update_branches, inputs=[sl_repo_select], outputs=[sl_branch_select, sl_terminal_log])
 
             sl_branch_select.change(
                 fn=sl_auto_render,
@@ -1291,10 +1310,14 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
 
         with gr.Tab("Report Viewer"):
             gr.Markdown("### View UX Reports & Solutions")
-            with gr.Row():
+            with gr.Row(visible=False):
                 rv_repo_select = gr.Dropdown(label="Repository", choices=[REPO_NAME], value=REPO_NAME, interactive=False)
                 rv_branch_select = gr.Dropdown(label="Branch", choices=get_repo_branches(REPO_NAME))
-                rv_refresh_branches_btn = gr.Button("Refresh Branches")
+
+            with gr.Row():
+                rv_refresh_branches_btn = gr.Button("Pull latest results")
+
+            rv_terminal_log = gr.Code(label="Connection Log", language="bash", value=f"[SYSTEM] Connected to {REPO_NAME}\n[SYSTEM] Ready to pull results.")
 
             with gr.Row():
                 rv_report_select = gr.Dropdown(label="Select Report", choices=[], allow_custom_value=True)
@@ -1326,27 +1349,32 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
             def rv_update_branches(repo_name):
                 branches = get_repo_branches(repo_name)
                 latest = branches[0] if branches else "main"
-                return gr.update(choices=branches, value=latest)
+                log = f"[SYSTEM] Pulled latest branches from {repo_name}\n[SYSTEM] Current branch: {latest}\n[SYSTEM] Found {len(branches)} branches."
+                return gr.update(choices=branches, value=latest), log
 
             def rv_update_reports(repo_name, branch_name):
                 reports = get_reports_in_branch(repo_name, branch_name, filter_type="report")
                 return gr.update(choices=reports, value=reports[0] if reports else None)
 
-            rv_repo_select.change(fn=rv_update_branches, inputs=[rv_repo_select], outputs=[rv_branch_select])
+            rv_repo_select.change(fn=rv_update_branches, inputs=[rv_repo_select], outputs=[rv_branch_select, rv_terminal_log])
             def rv_load_wrapper(repo, branch, selected, manual):
                 path = manual if manual else selected
                 return get_report_content(repo, branch, path)
 
-            rv_refresh_branches_btn.click(fn=rv_update_branches, inputs=[rv_repo_select], outputs=[rv_branch_select])
+            rv_refresh_branches_btn.click(fn=rv_update_branches, inputs=[rv_repo_select], outputs=[rv_branch_select, rv_terminal_log])
             rv_branch_select.change(fn=rv_update_reports, inputs=[rv_repo_select, rv_branch_select], outputs=[rv_report_select])
             rv_load_report_btn.click(fn=rv_load_wrapper, inputs=[rv_repo_select, rv_branch_select, rv_report_select, rv_manual_path], outputs=[rv_report_viewer])
 
         with gr.Tab("Persona Thought Logs"):
             gr.Markdown("### Persona Internal Monologue & Analysis")
-            with gr.Row():
+            with gr.Row(visible=False):
                 tl_repo_select = gr.Dropdown(label="Repository", choices=[REPO_NAME], value=REPO_NAME, interactive=False)
                 tl_branch_select = gr.Dropdown(label="Branch", choices=get_repo_branches(REPO_NAME))
-                tl_refresh_btn = gr.Button("Scan for Logs")
+
+            with gr.Row():
+                tl_refresh_btn = gr.Button("Pull latest results")
+
+            tl_terminal_log = gr.Code(label="Connection Log", language="bash", value=f"[SYSTEM] Connected to {REPO_NAME}\n[SYSTEM] Ready to pull results.")
 
             with gr.Row():
                 tl_log_select = gr.Dropdown(label="Select Thought Log", choices=[])
@@ -1355,10 +1383,13 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
             tl_viewer = gr.Markdown(label="Thought Log Content")
 
             def tl_update_logs(repo, branch):
-                logs = get_thought_logs_from_repo(repo, branch)
-                return gr.update(choices=logs, value=logs[0] if logs else None)
+                branches = get_repo_branches(repo)
+                latest = branches[0] if branches else "main"
+                log = f"[SYSTEM] Pulled latest branches from {repo}\n[SYSTEM] Current branch: {latest}"
+                logs = get_thought_logs_from_repo(repo, latest)
+                return gr.update(choices=logs, value=logs[0] if logs else None), log
 
-            tl_refresh_btn.click(fn=tl_update_logs, inputs=[tl_repo_select, tl_branch_select], outputs=[tl_log_select])
+            tl_refresh_btn.click(fn=tl_update_logs, inputs=[tl_repo_select, tl_branch_select], outputs=[tl_log_select, tl_terminal_log])
             tl_load_btn.click(fn=get_report_content, inputs=[tl_repo_select, tl_branch_select, tl_log_select], outputs=[tl_viewer])
 
         with gr.Tab("Average User Journey Heatmaps"):
