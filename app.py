@@ -639,7 +639,7 @@ def generate_tasks(theme, customer_profile, url):
 
     The tasks must be in sequential order and specific to the website {url}.
 
-    CRITICAL: You MUST return a JSON object with a "tasks" key containing a list of exactly 10 strings.
+    CRITICAL: Skip all internal monologue or thinking process. Return ONLY a JSON object with a "tasks" key containing a list of exactly 10 strings.
     Example: {{"tasks": ["task 1", "task 2", ..., "task 10"]}}
     Do not include any other text in your response.
     """
@@ -653,11 +653,12 @@ def generate_tasks(theme, customer_profile, url):
                 print(f"Retrying in parallel with {models_to_try}")
                 # Wait 35s if it's a retry (likely Proxy Error or Rate Limit)
                 time.sleep(35)
-                response = call_llm_parallel(client, models_to_try, [{"role": "user", "content": prompt}])
+                response = call_llm_parallel(client, models_to_try, [{"role": "user", "content": prompt}], response_format={"type": "json_object"})
             else:
                 response = client.chat.completions.create(
                     model="alias-large",
-                    messages=[{"role": "user", "content": prompt}]
+                    messages=[{"role": "user", "content": prompt}],
+                    response_format={"type": "json_object"}
                 )
 
             if response and not isinstance(response, Exception):
@@ -687,8 +688,15 @@ def generate_tasks(theme, customer_profile, url):
 
 def handle_generate(theme, customer_profile, num_personas, method, example_file, url):
     try:
+        current_profile = customer_profile
+        if method == "Example Persona" and example_file:
+            # Fetch example persona info to use as profile context for task generation
+            ex_personas = select_or_create_personas("", "", 1, "Example Persona", example_file)
+            if ex_personas:
+                current_profile = ex_personas[0].get('minibio', customer_profile)
+
         yield "Generating tasks...", None, None, None
-        tasks = generate_tasks(theme, customer_profile, url)
+        tasks = generate_tasks(theme, current_profile, url)
         tasks_text = "\n".join(tasks) if isinstance(tasks, list) else str(tasks)
 
         yield "Selecting or creating personas...", tasks_text, None, tasks
