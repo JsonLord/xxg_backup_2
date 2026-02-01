@@ -684,7 +684,7 @@ def start_and_monitor_sessions(personas, tasks, url, session_id):
     # Ticketing system: Session ID is used as the branch name for analysis
     if not session_id:
         session_id = f"sess-{uuid.uuid4().hex[:8]}"
-        add_log(f"Auto-generated Session ID: {session_id}")
+        add_log(f"Auto-generated Session ID (Branch): {session_id}")
 
     # For starting analysis, we don't strictly require the branch to exist yet
     # as Jules might create it or we might be starting on main.
@@ -692,17 +692,18 @@ def start_and_monitor_sessions(personas, tasks, url, session_id):
         add_log(f"Warning: Branch '{session_id}' not found on GitHub. Proceeding with analysis (Jules may create it).")
 
     if not personas or not tasks:
-        yield "Error: Personas or Tasks missing. Please generate them first.", "", ""
+        yield "Error: Personas or Tasks missing. Please generate them first.", "", "", ""
         return
 
     if not ANALYSIS_API_KEY:
-        yield "Error: Analysis API key not set.", "", ""
+        yield "Error: Analysis API key not set.", "", "", ""
         return
 
     with open("analysis_template.md", "r") as f:
         template = f.read()
 
     sessions = []
+    jules_uuids = []
     for persona in personas:
         # Use provided session_id or append to it if multiple personas?
         # For simplicity, we use session_id as the report_id too
@@ -736,23 +737,24 @@ def start_and_monitor_sessions(personas, tasks, url, session_id):
         if response.status_code == 200:
             sess_data = response.json()
             sessions.append(sess_data)
-            # Yield session ID immediately so UI can update
-            yield f"Session created: {sess_data['id']}. ID: {session_id}", "", session_id
+            jules_uuids.append(sess_data['id'])
+            # Yield session ID immediately so UI can update. 3rd output is Branch Name, 4th is Jules UUID
+            yield f"Session created: {sess_data['id']}. ID: {session_id}", "", session_id, sess_data['id']
         else:
-            yield f"Error creating session for {persona['name']}: {response.text}", "", ""
+            yield f"Error creating session for {persona['name']}: {response.text}", "", "", ""
             return
 
     # Monitoring
     all_reports = ""
-    last_session_id = ""
+    last_jules_uuid = jules_uuids[-1] if jules_uuids else ""
     while sessions:
         for i, session in enumerate(sessions):
-            session_id = session['id']
-            last_session_id = session_id
-            res = requests.get(f"{ANALYSIS_API_URL}/sessions/{session_id}", headers=headers)
+            curr_jules_uuid = session['id']
+            last_jules_uuid = curr_jules_uuid
+            res = requests.get(f"{ANALYSIS_API_URL}/sessions/{curr_jules_uuid}", headers=headers)
             if res.status_code == 200:
                 current_session = res.json()
-                yield f"Monitoring sessions... Status of {current_session.get('title')}: {current_session.get('state', 'UNKNOWN')}", all_reports, session_id
+                yield f"Monitoring sessions... Status of {current_session.get('title')}: {current_session.get('state', 'UNKNOWN')}", all_reports, session_id, curr_jules_uuid
 
                 # Check for PR in outputs
                 outputs = current_session.get("outputs", [])
@@ -763,18 +765,22 @@ def start_and_monitor_sessions(personas, tasks, url, session_id):
                         break
 
                 if pr_url:
-                    yield f"PR created for {current_session.get('title')}: {pr_url}. Pulling report...", all_reports, session_id
+                    yield f"PR created for {current_session.get('title')}: {pr_url}. Pulling report...", all_reports, session_id, curr_jules_uuid
                     report_content = pull_report_from_pr(pr_url)
                     all_reports += f"\n\n# Report for {current_session.get('title')}\n\n{report_content}"
                     sessions.pop(i)
                     break # Restart loop since we modified the list
             else:
-                print(f"Error polling session {session_id}: {res.text}")
+                print(f"Error polling session {curr_jules_uuid}: {res.text}")
 
         if sessions:
             time.sleep(30) # Poll every 30 seconds
 
-    yield "All sessions complete!", all_reports, last_session_id
+    # Upon completion, automatically trigger HF upload
+    add_log("Analysis complete. Triggering HF upload...")
+    deploy_to_hf()
+
+    yield "All sessions complete and changes pushed to HF!", all_reports, session_id, last_jules_uuid
 
 def get_reports_in_branch(repo_full_name, branch_name, filter_type=None):
     if not gh or not repo_full_name or not branch_name:
@@ -1004,8 +1010,17 @@ def get_heatmaps_from_repo(repo_full_name, branch_name):
             heatmaps = []
             for c in contents:
                 if c.name.endswith(".png"):
-                    # Categorize by filename
-                    name = c.name.replace(".png", "").replace("heatmap_", "").replace("_", " ").title()
+                    # Categorize by filename - Extract problem category
+                    # Expected format: heatmap_problem_category_id.png
+                    raw_name = c.name.replace(".png", "").replace("heatmap_", "")
+                    parts = raw_name.split("_")
+                    if len(parts) > 1:
+                        category = parts[0].title()
+                        desc = " ".join(parts[1:]).title()
+                        name = f"[{category}] {desc}"
+                    else:
+                        name = raw_name.replace("_", " ").title()
+
                     heatmaps.append((c.download_url, name))
 
             # Sort by name to group categories together
@@ -1016,6 +1031,27 @@ def get_heatmaps_from_repo(repo_full_name, branch_name):
     except Exception as e:
         add_log(f"Error fetching heatmaps: {e}")
         return []
+
+def deploy_to_hf():
+    hf_token = os.environ.get("HF_TOKEN")
+    hf_space_dest = os.environ.get("HF_SPACE_DEST", "harvesthealth/aux_backup")
+    if not hf_token:
+        return "❌ Error: HF_TOKEN environment variable not set."
+
+    add_log(f"Deploying to HF Space: {hf_space_dest}...")
+    try:
+        # Use provided token and revision
+        cmd = f"hf upload {hf_space_dest} . --repo-type=space --token {hf_token} --revision main"
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        if result.returncode == 0:
+            add_log("Deployment successful.")
+            return "✅ Deployment successful."
+        else:
+            add_log(f"Deployment failed: {result.stderr}")
+            return f"❌ Deployment failed: {result.stderr}"
+    except Exception as e:
+        add_log(f"Error during deployment: {e}")
+        return f"❌ Error: {str(e)}"
 
 def get_solutions_from_repo(repo_full_name, branch_name):
     if not gh or not repo_full_name or not branch_name:
@@ -1127,10 +1163,10 @@ def poll_for_generated_ui(repo_full_name, branch_name, session_id):
     except:
         return "UI not generated yet. Please wait..."
 
-def blablador_chat_adaptation(message="", history=[], session_id=""):
-    print(f"DEBUG: blablador_chat_adaptation called with message='{message}', history='{history}', session_id='{session_id}'")
-    if not BLABLADOR_API_KEY or not session_id:
-        return history + [("System", "Error: BLABLADOR_API_KEY or Session ID missing.")], ""
+def blablador_chat_adaptation(message="", history=[], jules_uuid=""):
+    print(f"DEBUG: blablador_chat_adaptation called with message='{message}', history='{history}', jules_uuid='{jules_uuid}'")
+    if not BLABLADOR_API_KEY or not jules_uuid:
+        return history + [("System", "Error: BLABLADOR_API_KEY or Jules UUID missing.")], ""
 
     # This should call sendMessage to the same session_id for real-time adaptation
     # but also use alias-code for the chat experience if desired.
@@ -1148,7 +1184,7 @@ def blablador_chat_adaptation(message="", history=[], session_id=""):
 
         # Also notify Jules session to actually do the work if needed
         headers = {"X-Goog-Api-Key": ANALYSIS_API_KEY, "Content-Type": "application/json"}
-        requests.post(f"{ANALYSIS_API_URL}/sessions/{session_id}:sendMessage", headers=headers, json={"prompt": message})
+        requests.post(f"{ANALYSIS_API_URL}/sessions/{jules_uuid}:sendMessage", headers=headers, json={"prompt": message})
 
         history.append((message, agent_msg))
         return history, ""
@@ -1196,6 +1232,7 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
     gr.Markdown("# UX Analysis Orchestrator")
 
     active_session_state = gr.State("")
+    active_jules_uuid_state = gr.State("")
     last_generated_tasks_state = gr.State([])
     session_id_sync_list = []
     all_solutions_state = gr.State([])
@@ -1496,8 +1533,9 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
 
         with gr.Tab("Full New UI"):
             with gr.Row():
-                session_id_ui = gr.Textbox(label="Jules Session ID (sess-xxxx) or Branch Name", placeholder="Enter Session ID or Branch Name to generate/refine UI...")
+                session_id_ui = gr.Textbox(label="Session ID", placeholder="Enter Session ID (GitHub Branch Name)...")
                 session_id_sync_list.append(session_id_ui)
+                jules_uuid_ui = gr.Textbox(label="System UUID", placeholder="Automatically filled after analysis...")
             with gr.Row():
                 with gr.Column(scale=3):
                     gr.Markdown("### Generated Landing Page")
@@ -1511,9 +1549,9 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
                     ui_chat_msg = gr.Textbox(label="Request Modification", placeholder="e.g. Change primary color to emerald...")
                     ui_chat_send = gr.Button("Send Request")
 
-            generate_full_ui_btn.click(fn=generate_full_ui_call, inputs=[rv_repo_select, rv_branch_select, session_id_ui, selected_solutions_json_state, url_input], outputs=[full_ui_iframe])
+            generate_full_ui_btn.click(fn=generate_full_ui_call, inputs=[rv_repo_select, rv_branch_select, jules_uuid_ui, selected_solutions_json_state, url_input], outputs=[full_ui_iframe])
             refresh_ui_btn.click(fn=poll_for_generated_ui, inputs=[rv_repo_select, rv_branch_select, session_id_ui], outputs=[full_ui_iframe])
-            ui_chat_send.click(fn=blablador_chat_adaptation, inputs=[ui_chat_msg, ui_chatbot, session_id_ui], outputs=[ui_chatbot, ui_chat_msg])
+            ui_chat_send.click(fn=blablador_chat_adaptation, inputs=[ui_chat_msg, ui_chatbot, jules_uuid_ui], outputs=[ui_chatbot, ui_chat_msg])
 
 
         with gr.Tab("System"):
@@ -1527,7 +1565,7 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
                 sys_test_btn = gr.Button("Test Connection & Fetch Branches")
             
             sys_status = gr.Textbox(label="Connection Status", interactive=False)
-            sys_branch_output = gr.JSON(label="Discovered Branches")
+            sys_branch_output = gr.JSON(label="Connection Log")
 
             def system_test(token, repo_name):
                 global gh, GITHUB_TOKEN
@@ -1556,10 +1594,10 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
                     # Use existing optimized logic
                     branches = get_repo_branches(repo_name, github_client=test_gh)
                     
-                    return status, branches
+                    return status, {"status": "Connection established successfully", "user": user, "branches_count": len(branches)}
                 except Exception as e:
                     add_log(f"System Test Error: {str(e)}")
-                    return f"Error: {str(e)}", None
+                    return f"Error: {str(e)}", {"status": "Connection failed", "error": str(e)}
 
             sys_test_btn.click(fn=system_test, inputs=[sys_token_input, sys_repo_input], outputs=[sys_status, sys_branch_output])
 
@@ -1587,6 +1625,25 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
             gr.Markdown("### Design Automation & Iteration")
             gr.Markdown("We are working with the team behind https://github.com/onlook-dev/onlook to automate fast design iterations based on the user test reports. Stay updated on changes to the Github Page by following it.")
 
+            gr.Markdown("---")
+            gr.Markdown("### 🚀 Recommendations for Customer-Facing Application")
+            gr.Markdown("""
+            To transform this prototype into a production-ready customer application, we recommend the following enhancements:
+
+            1. **Multi-Tenant Authentication**: Implement Clerk or NextAuth for secure user logins and project isolation, ensuring customers only see their own analysis branches.
+            2. **Real-Time Step Visualization**: Replace the static status logs with a real-time progress bar and a "Live View" tab showing Jules' browser interactions as they happen.
+            3. **Figma/Design Integration**: Develop a plugin to export the "Identified UI Improvements" directly into Figma as annotated design layers.
+            4. **Guided Onboarding Flow**: Add a "Wizard" mode for first-time users to help them define their Theme and Customer Profile through guided questions.
+            5. **Result Comparison (A/B Testing)**: Add a feature to view the original landing page side-by-side with the Generated UI, including a "Scorecard" of UX metrics (Accessibility, Conversion, Clarity).
+            6. **Automated Deployment Previews**: Integrate with Vercel/Netlify APIs to automatically deploy the 'Full New UI' to a shareable preview URL upon generation.
+            """)
+
+            gr.Markdown("---")
+            gr.Markdown("### 🛠️ Manual Deployment")
+            manual_deploy_btn = gr.Button("Push App Changes to Hugging Face Space")
+            deploy_status = gr.Markdown()
+            manual_deploy_btn.click(fn=deploy_to_hf, outputs=[deploy_status])
+
     # Persona Preview Handler (moved to a safe place if not already there)
     # Actually it's inside the Tab block in previous edit.
 
@@ -1600,11 +1657,15 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
     start_session_btn.click(
         fn=start_and_monitor_sessions,
         inputs=[persona_display, last_generated_tasks_state, url_input, session_id_orch],
-        outputs=[status_output, report_output, active_session_state]
+        outputs=[status_output, report_output, active_session_state, active_jules_uuid_state]
     ).then(
         fn=lambda x: [x] * len(session_id_sync_list),
         inputs=[active_session_state],
         outputs=session_id_sync_list
+    ).then(
+        fn=lambda x: x,
+        inputs=[active_jules_uuid_state],
+        outputs=[jules_uuid_ui]
     )
 
     # Session ID Sync
