@@ -310,6 +310,35 @@ def upload_persona_to_pool(persona_data):
     except Exception as e:
         print(f"Error uploading persona to pool: {e}")
 
+def upload_context_to_github(repo_name, session_id, persona, tasks):
+    if not gh:
+        add_log("ERROR: GitHub client not initialized for context upload.")
+        return None
+
+    file_path = f"user_experience_reports/contexts/context_{session_id}.md"
+    content = f"""# Analysis Context for Session {session_id}
+
+## Persona
+{json.dumps(persona, indent=2)}
+
+## Tasks
+{json.dumps(tasks, indent=2)}
+"""
+    try:
+        repo = gh.get_repo(repo_name)
+        try:
+            # Check if exists (unlikely for new session)
+            existing = repo.get_contents(file_path, ref="main")
+            repo.update_file(file_path, f"Update context for {session_id}", content, existing.sha, branch="main")
+        except:
+            repo.create_file(file_path, f"Add context for {session_id}", content, branch="main")
+
+        add_log(f"Successfully uploaded context file to {repo_name} main branch.")
+        return f"https://github.com/{repo_name}/blob/main/{file_path}"
+    except Exception as e:
+        add_log(f"ERROR uploading context to GitHub: {e}")
+        return None
+
 def select_or_create_personas(theme, customer_profile, num_personas, force_method=None, example_file=None):
     if force_method == "Example Persona" and example_file:
         add_log(f"Loading example persona from {example_file}...")
@@ -704,15 +733,19 @@ def start_and_monitor_sessions(personas, tasks, url, session_id):
 
     sessions = []
     jules_uuids = []
+
+    # Upload context file to main branch
+    context_url = upload_context_to_github(repo_name, session_id, personas[0], tasks)
+    if not context_url:
+        add_log("Warning: Failed to upload context file. Jules might not find it.")
+
     for persona in personas:
         # Use provided session_id or append to it if multiple personas?
         # For simplicity, we use session_id as the report_id too
         report_id = session_id
         
         # Format prompt
-        prompt = template.replace("{{persona_context}}", json.dumps(persona))
-        prompt = prompt.replace("{{tasks_list}}", json.dumps(tasks))
-        prompt = prompt.replace("{{url}}", url)
+        prompt = template.replace("{{url}}", url)
         prompt = prompt.replace("{{report_id}}", report_id)
         prompt = prompt.replace("{{blablador_api_key}}", BLABLADOR_API_KEY if BLABLADOR_API_KEY else "YOUR_API_KEY")
 
