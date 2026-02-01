@@ -1,5 +1,6 @@
-# CONTEXT FILE: user_experience_reports/contexts/context_{{report_id}}.md
-# Please read the persona and tasks from the context file at the path above.
+# CONTEXT FILE: contexts/context_{{report_id}}.md
+# COMMAND: Use `read_file` or equivalent to read the context file at the path above.
+# It contains the persona JSON and the tasks list for this analysis.
 
 # UX STRATEGIST TEMPLATE (CLIENT-GRADE)
 

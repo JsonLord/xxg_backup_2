@@ -315,7 +315,7 @@ def upload_context_to_github(repo_name, session_id, persona, tasks):
         add_log("ERROR: GitHub client not initialized for context upload.")
         return None
 
-    file_path = f"user_experience_reports/contexts/context_{session_id}.md"
+    file_path = f"contexts/context_{session_id}.md"
     content = f"""# Analysis Context for Session {session_id}
 
 ## Persona
@@ -738,6 +738,9 @@ def start_and_monitor_sessions(personas, tasks, url, session_id):
     context_url = upload_context_to_github(repo_name, session_id, personas[0], tasks)
     if not context_url:
         add_log("Warning: Failed to upload context file. Jules might not find it.")
+    else:
+        add_log(f"Waiting 5 seconds for GitHub propagation...")
+        time.sleep(5)
 
     for persona in personas:
         # Use provided session_id or append to it if multiple personas?
