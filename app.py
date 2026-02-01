@@ -55,8 +55,9 @@ def patch_tinytroupe():
         if "_raw_model_call_parallel" not in content:
             content = content.replace("class OpenAIClient:", "class OpenAIClient:" + parallel_helper)
 
-        # 2. Ensure alias-large is used (revert any previous fast patches)
-        content = content.replace('"alias-fast"', '"alias-large"')
+        # 2. Ensure alias-huge is used (alias-large is deprecated/down)
+        content = content.replace('"alias-fast"', '"alias-huge"')
+        content = content.replace('"alias-large"', '"alias-huge"')
 
         # 3. Handle 502 errors by waiting 35 seconds and setting a parallel retry flag
         # We need to modify the send_message loop
@@ -68,8 +69,8 @@ def patch_tinytroupe():
         if 'if parallel_retry:' not in content:
             old_call = "response = self._raw_model_call(model, chat_api_params)"
             new_call = """if parallel_retry:
-                        logger.info("Attempting parallel call to alias-large and alias-huge.")
-                        response = self._raw_model_call_parallel(["alias-large", "alias-huge"], chat_api_params)
+                        logger.info("Attempting parallel call to alias-huge and alias-fast.")
+                        response = self._raw_model_call_parallel(["alias-huge", "alias-fast"], chat_api_params)
                         if isinstance(response, Exception):
                             raise response
                     else:
@@ -395,7 +396,7 @@ def select_or_create_personas(theme, customer_profile, num_personas, force_metho
 
     try:
         response = client.chat.completions.create(
-            model="alias-large",
+            model="alias-huge",
             messages=[{"role": "user", "content": prompt}]
         )
         content = response.choices[0].message.content
@@ -434,7 +435,7 @@ def generate_persona_from_deeppersona(theme, customer_profile):
     if not client:
         return None
 
-    # Step 1: Breakdown profile into parameters using LLM alias-large
+    # Step 1: Breakdown profile into parameters using LLM alias-huge
     prompt = f"""
     You are an expert in persona creation.
     Break down the following business theme and customer profile into detailed attributes for a persona.
@@ -458,7 +459,7 @@ def generate_persona_from_deeppersona(theme, customer_profile):
 
     try:
         response = client.chat.completions.create(
-            model="alias-large",
+            model="alias-huge",
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"}
         )
@@ -535,9 +536,9 @@ def generate_personas(theme, customer_profile, num_personas):
     
     add_log("Falling back to TinyTroupe logic for remaining personas...")
     
-    # Ensure alias-large is used
-    config_manager.update("model", "alias-large")
-    config_manager.update("reasoning_model", "alias-large")
+    # Ensure alias-huge is used
+    config_manager.update("model", "alias-huge")
+    config_manager.update("reasoning_model", "alias-huge")
 
     context = f"A company related to {theme}. Target customers: {customer_profile}"
 
@@ -615,7 +616,7 @@ def generate_tasks(theme, customer_profile, url):
     Do not include any other text in your response.
     """
 
-    models_to_try = ["alias-large", "alias-huge", "alias-fast"]
+    models_to_try = ["alias-huge", "alias-fast", "alias-large"]
 
     for attempt in range(5):
         try:
@@ -627,7 +628,7 @@ def generate_tasks(theme, customer_profile, url):
                 response = call_llm_parallel(client, models_to_try, [{"role": "user", "content": prompt}], response_format={"type": "json_object"})
             else:
                 response = client.chat.completions.create(
-                    model="alias-large",
+                    model="alias-huge",
                     messages=[{"role": "user", "content": prompt}],
                     response_format={"type": "json_object"}
                 )
