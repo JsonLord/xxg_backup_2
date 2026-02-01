@@ -1227,7 +1227,7 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
             with gr.Row():
                 sl_refresh_branches_btn = gr.Button("Pull latest results")
 
-            sl_terminal_log = gr.Code(label="Connection Log", language="bash", value=f"[SYSTEM] Connected to {REPO_NAME}\n[SYSTEM] Ready to pull results.")
+            sl_terminal_log = gr.Code(label="Connection Log", language="shell", value=f"[SYSTEM] Connected to {REPO_NAME}\n[SYSTEM] Ready to pull results.")
 
             with gr.Row():
                 sl_status_display = gr.Markdown("Click 'Pull latest results' to discover slides.")
@@ -1317,7 +1317,7 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
             with gr.Row():
                 rv_refresh_branches_btn = gr.Button("Pull latest results")
 
-            rv_terminal_log = gr.Code(label="Connection Log", language="bash", value=f"[SYSTEM] Connected to {REPO_NAME}\n[SYSTEM] Ready to pull results.")
+            rv_terminal_log = gr.Code(label="Connection Log", language="shell", value=f"[SYSTEM] Connected to {REPO_NAME}\n[SYSTEM] Ready to pull results.")
 
             with gr.Row():
                 rv_report_select = gr.Dropdown(label="Select Report", choices=[], allow_custom_value=True)
@@ -1374,7 +1374,7 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
             with gr.Row():
                 tl_refresh_btn = gr.Button("Pull latest results")
 
-            tl_terminal_log = gr.Code(label="Connection Log", language="bash", value=f"[SYSTEM] Connected to {REPO_NAME}\n[SYSTEM] Ready to pull results.")
+            tl_terminal_log = gr.Code(label="Connection Log", language="shell", value=f"[SYSTEM] Connected to {REPO_NAME}\n[SYSTEM] Ready to pull results.")
 
             with gr.Row():
                 tl_log_select = gr.Dropdown(label="Select Thought Log", choices=[])
