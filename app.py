@@ -611,7 +611,7 @@ def generate_tasks(theme, customer_profile, url):
     The tasks must be in sequential order and specific to the website {url}.
 
     CRITICAL: You MUST return a JSON object with a "tasks" key containing a list of exactly 10 strings.
-    Example: {"tasks": ["task 1", "task 2", ..., "task 10"]}
+    Example: {{"tasks": ["task 1", "task 2", ..., "task 10"]}}
     Do not include any other text in your response.
     """
 
@@ -983,7 +983,12 @@ def get_heatmaps_from_repo(repo_full_name, branch_name):
             heatmaps = []
             for c in contents:
                 if c.name.endswith(".png"):
-                    heatmaps.append((c.download_url, c.name))
+                    # Categorize by filename
+                    name = c.name.replace(".png", "").replace("heatmap_", "").replace("_", " ").title()
+                    heatmaps.append((c.download_url, name))
+
+            # Sort by name to group categories together
+            heatmaps.sort(key=lambda x: x[1])
             return heatmaps
         except:
             return []
@@ -1503,6 +1508,43 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
             timer = gr.Timer(value=60)
             timer.tick(fn=monitor_and_log, outputs=[global_feed, live_log])
             refresh_feed_btn.click(fn=monitor_and_log, outputs=[global_feed, live_log])
+
+        with gr.Tab("Hugging Face Space"):
+            gr.Markdown("### Manage Hugging Face Space")
+            hf_token_input = gr.Textbox(label="HF Access Token", type="password", value=os.environ.get("HF_TOKEN", ""))
+            hf_repo_input = gr.Textbox(label="HF Repo", value="harvesthealth/aux_backup")
+
+            with gr.Row():
+                hf_upload_btn = gr.Button("Push Changes to Space", variant="primary")
+                hf_status = gr.Textbox(label="Upload Status", interactive=False)
+
+            def trigger_hf_upload(token, repo):
+                try:
+                    cmd = f"python3 -m huggingface_hub.cli.hf upload {repo} . --repo-type=space --token {token} --revision main"
+                    result = subprocess.run(cmd.split(), capture_output=True, text=True)
+                    if result.returncode == 0:
+                        return f"✅ Success: {result.stdout[:200]}..."
+                    else:
+                        return f"❌ Error: {result.stderr}"
+                except Exception as e:
+                    return f"❌ Exception: {str(e)}"
+
+            hf_upload_btn.click(fn=trigger_hf_upload, inputs=[hf_token_input, hf_repo_input], outputs=[hf_status])
+
+            gr.Markdown("### Monitor Logs (SSE)")
+            gr.Markdown("""
+            Use these commands to monitor build and runtime logs via API:
+
+            **Get build logs:**
+            ```bash
+            curl -N -H "Authorization: Bearer $HF_TOKEN" "https://huggingface.co/api/spaces/harvesthealth/aux_backup/logs/build"
+            ```
+
+            **Get container logs:**
+            ```bash
+            curl -N -H "Authorization: Bearer $HF_TOKEN" "https://huggingface.co/api/spaces/harvesthealth/aux_backup/logs/run"
+            ```
+            """)
 
         with gr.Tab("Alternative Styling"):
             gr.Markdown("### Design Automation & Iteration")
