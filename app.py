@@ -658,15 +658,16 @@ def generate_tasks(theme, customer_profile, url):
 
 def handle_generate(theme, customer_profile, num_personas, method, example_file, url):
     try:
-        yield "Generating tasks...", None, None
+        yield "Generating tasks...", None, None, None
         tasks = generate_tasks(theme, customer_profile, url)
+        tasks_text = "\n".join(tasks) if isinstance(tasks, list) else str(tasks)
 
-        yield "Selecting or creating personas...", tasks, None
+        yield "Selecting or creating personas...", tasks_text, None, tasks
         personas = select_or_create_personas(theme, customer_profile, num_personas, force_method=method, example_file=example_file)
 
-        yield "Generation complete!", tasks, personas
+        yield "Generation complete!", tasks_text, personas, tasks
     except Exception as e:
-        yield f"Error during generation: {str(e)}", None, None
+        yield f"Error during generation: {str(e)}", None, None, None
 
 def check_branch_exists(repo_full_name, branch_name):
     if not gh: return False
@@ -681,14 +682,14 @@ def start_and_monitor_sessions(personas, tasks, url, session_id):
     repo_name = REPO_NAME
 
     # Ticketing system: Session ID is used as the branch name for analysis
-    # Buttons only work if the branch exists on GitHub.
     if not session_id:
-        yield "Error: Session ID (Branch Name) is required for the ticketing system.", "", ""
-        return
+        session_id = f"sess-{uuid.uuid4().hex[:8]}"
+        add_log(f"Auto-generated Session ID: {session_id}")
 
+    # For starting analysis, we don't strictly require the branch to exist yet
+    # as Jules might create it or we might be starting on main.
     if not check_branch_exists(repo_name, session_id):
-        yield f"Error: Branch '{session_id}' not found on GitHub. Please create it first. (Wait 30 mins if newly created)", "", ""
-        return
+        add_log(f"Warning: Branch '{session_id}' not found on GitHub. Proceeding with analysis (Jules may create it).")
 
     if not personas or not tasks:
         yield "Error: Personas or Tasks missing. Please generate them first.", "", ""
@@ -735,7 +736,8 @@ def start_and_monitor_sessions(personas, tasks, url, session_id):
         if response.status_code == 200:
             sess_data = response.json()
             sessions.append(sess_data)
-            yield f"Session created: {sess_data['id']}", "", sess_data['id']
+            # Yield session ID immediately so UI can update
+            yield f"Session created: {sess_data['id']}. ID: {session_id}", "", session_id
         else:
             yield f"Error creating session for {persona['name']}: {response.text}", "", ""
             return
@@ -1194,6 +1196,7 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
     gr.Markdown("# UX Analysis Orchestrator")
 
     active_session_state = gr.State("")
+    last_generated_tasks_state = gr.State([])
     session_id_sync_list = []
     all_solutions_state = gr.State([])
     selected_solutions_json_state = gr.State("[]")
@@ -1206,6 +1209,7 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
                     theme_input = gr.Textbox(label="Theme", placeholder="e.g., Communication, Purchase decisions, Information gathering")
                     profile_input = gr.Textbox(label="Customer Profile Description", placeholder="Describe the target customer...")
                     num_personas_input = gr.Number(label="Number of Personas", value=1, precision=0)
+                    url_input = gr.Textbox(label="Target URL", value="https://example.com")
                     persona_method = gr.Radio(["Example Persona", "TinyTroupe", "DeepPersona"], label="Persona Generation Method", value="TinyTroupe")
 
                     with gr.Column(visible=False) as example_persona_col:
@@ -1246,18 +1250,32 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
 
                         example_persona_select.change(fn=update_persona_preview, inputs=[example_persona_select], outputs=[example_persona_preview])
 
-                    url_input = gr.Textbox(label="Target URL", value="https://example.com")
-                    generate_btn = gr.Button("Generate Personas & Tasks")
-
                     def update_method_visibility(method):
                         return gr.update(visible=(method == "Example Persona"))
 
                     persona_method.change(fn=update_method_visibility, inputs=[persona_method], outputs=[example_persona_col])
 
+                    generate_btn = gr.Button("Generate Personas & Tasks")
+
                 with gr.Column():
                     status_output = gr.Textbox(label="Status", interactive=False)
-                    task_list_display = gr.JSON(label="Tasks")
+                    with gr.Row():
+                        task_list_display = gr.TextArea(label="Tasks", lines=10, interactive=True, scale=4)
+                        with gr.Column(min_width=40, scale=1):
+                            save_tasks_btn = gr.Button("✅")
+                            cancel_tasks_btn = gr.Button("❌")
+
                     persona_display = gr.JSON(label="Personas")
+
+                    def save_tasks(tasks_text):
+                        tasks = [t.strip() for t in tasks_text.split("\n") if t.strip()]
+                        return tasks, "Tasks saved."
+
+                    def cancel_tasks(last_tasks):
+                        return "\n".join(last_tasks), "Changes reverted."
+
+                    save_tasks_btn.click(fn=save_tasks, inputs=[task_list_display], outputs=[last_generated_tasks_state, status_output])
+                    cancel_tasks_btn.click(fn=cancel_tasks, inputs=[last_generated_tasks_state], outputs=[task_list_display, status_output])
 
             start_session_btn = gr.Button("Start Analysis Session", variant="primary")
             session_id_orch = gr.Textbox(label="Session ID (GitHub Branch Name)", interactive=True, placeholder="Enter a GitHub branch name to start analysis on...")
@@ -1458,6 +1476,9 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
 
         with gr.Tab("Average User Journey Heatmaps"):
             gr.Markdown("### Heatmaps")
+            with gr.Row():
+                session_id_hm = gr.Textbox(label="Session ID", placeholder="Enter Session ID...")
+                session_id_sync_list.append(session_id_hm)
             refresh_heatmaps_btn = gr.Button("Refresh Heatmaps")
             heatmap_gallery = gr.Gallery(label="User Interaction Heatmaps", columns=2)
 
@@ -1465,6 +1486,9 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
 
         with gr.Tab("Agents.txt"):
             gr.Markdown("### Coding Agent Prompt")
+            with gr.Row():
+                session_id_at = gr.Textbox(label="Session ID", placeholder="Enter Session ID...")
+                session_id_sync_list.append(session_id_at)
             refresh_agent_prompt_btn = gr.Button("Generate Prompt for Agent")
             agent_prompt_display = gr.Code(label="Prompt for Coding Agent", language="markdown")
 
@@ -1494,6 +1518,9 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
 
         with gr.Tab("System"):
             gr.Markdown("### System Diagnostics & Manual Connection")
+            with gr.Row():
+                session_id_sys = gr.Textbox(label="Session ID", placeholder="Enter Session ID...")
+                session_id_sync_list.append(session_id_sys)
             with gr.Row():
                 sys_token_input = gr.Textbox(label="GitHub Token (Leave blank for default)", type="password")
                 sys_repo_input = gr.Textbox(label="Repository (e.g., JsonLord/tiny_web)", value=REPO_NAME, interactive=False)
@@ -1538,6 +1565,9 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
 
         with gr.Tab("Live Monitoring"):
             gr.Markdown("### Live Monitoring of JsonLord/tiny_web for new UX reports")
+            with gr.Row():
+                session_id_live = gr.Textbox(label="Session ID", placeholder="Enter Session ID...")
+                session_id_sync_list.append(session_id_live)
             live_log = gr.Textbox(label="GitHub Connection Logs", lines=5, interactive=False)
             refresh_feed_btn = gr.Button("Refresh Feed Now")
             global_feed = gr.Markdown(value="Waiting for new reports...")
@@ -1552,42 +1582,6 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
             timer.tick(fn=monitor_and_log, outputs=[global_feed, live_log])
             refresh_feed_btn.click(fn=monitor_and_log, outputs=[global_feed, live_log])
 
-        with gr.Tab("Hugging Face Space"):
-            gr.Markdown("### Manage Hugging Face Space")
-            hf_token_input = gr.Textbox(label="HF Access Token", type="password", value=os.environ.get("HF_TOKEN", ""))
-            hf_repo_input = gr.Textbox(label="HF Repo", value="harvesthealth/aux_backup")
-
-            with gr.Row():
-                hf_upload_btn = gr.Button("Push Changes to Space", variant="primary")
-                hf_status = gr.Textbox(label="Upload Status", interactive=False)
-
-            def trigger_hf_upload(token, repo):
-                try:
-                    cmd = f"python3 -m huggingface_hub.cli.hf upload {repo} . --repo-type=space --token {token} --revision main"
-                    result = subprocess.run(cmd.split(), capture_output=True, text=True)
-                    if result.returncode == 0:
-                        return f"✅ Success: {result.stdout[:200]}..."
-                    else:
-                        return f"❌ Error: {result.stderr}"
-                except Exception as e:
-                    return f"❌ Exception: {str(e)}"
-
-            hf_upload_btn.click(fn=trigger_hf_upload, inputs=[hf_token_input, hf_repo_input], outputs=[hf_status])
-
-            gr.Markdown("### Monitor Logs (SSE)")
-            gr.Markdown("""
-            Use these commands to monitor build and runtime logs via API:
-
-            **Get build logs:**
-            ```bash
-            curl -N -H "Authorization: Bearer $HF_TOKEN" "https://huggingface.co/api/spaces/harvesthealth/aux_backup/logs/build"
-            ```
-
-            **Get container logs:**
-            ```bash
-            curl -N -H "Authorization: Bearer $HF_TOKEN" "https://huggingface.co/api/spaces/harvesthealth/aux_backup/logs/run"
-            ```
-            """)
 
         with gr.Tab("Alternative Styling"):
             gr.Markdown("### Design Automation & Iteration")
@@ -1600,12 +1594,12 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
     generate_btn.click(
         fn=handle_generate,
         inputs=[theme_input, profile_input, num_personas_input, persona_method, example_persona_select, url_input],
-        outputs=[status_output, task_list_display, persona_display]
+        outputs=[status_output, task_list_display, persona_display, last_generated_tasks_state]
     )
 
     start_session_btn.click(
         fn=start_and_monitor_sessions,
-        inputs=[persona_display, task_list_display, url_input, session_id_orch],
+        inputs=[persona_display, last_generated_tasks_state, url_input, session_id_orch],
         outputs=[status_output, report_output, active_session_state]
     ).then(
         fn=lambda x: [x] * len(session_id_sync_list),
