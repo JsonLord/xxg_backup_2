@@ -687,6 +687,14 @@ def check_branch_exists(repo_full_name, branch_name):
     except:
         return False
 
+def download_session_id_file(session_id):
+    if not session_id:
+        return None
+    file_path = f"session_id_{session_id}.txt"
+    with open(file_path, "w") as f:
+        f.write(session_id)
+    return file_path
+
 def resolve_branch(repo_name, session_id, branches):
     if not session_id:
         return branches[0] if branches else "main"
@@ -1345,7 +1353,10 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
                     cancel_tasks_btn.click(fn=cancel_tasks, inputs=[last_generated_tasks_state], outputs=[task_list_display, status_output])
 
             start_session_btn = gr.Button("Start Analysis Session", variant="primary")
-            session_id_orch = gr.Textbox(label="Session ID (GitHub Branch Name)", interactive=True, placeholder="Enter a GitHub branch name to start analysis on...")
+            with gr.Row():
+                session_id_orch = gr.Textbox(label="Session ID (GitHub Branch Name)", interactive=True, placeholder="Enter a GitHub branch name to start analysis on...", scale=4)
+                download_sid_btn = gr.Button("Download ID", scale=1)
+            session_id_download_file = gr.File(label="Session ID Download", visible=False)
             session_id_sync_list.append(session_id_orch)
             report_output = gr.Markdown(label="Active Session Reports")
 
@@ -1678,6 +1689,15 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
     # Actually it's inside the Tab block in previous edit.
 
     # Event handlers
+    download_sid_btn.click(
+        fn=download_session_id_file,
+        inputs=[session_id_orch],
+        outputs=[session_id_download_file]
+    ).then(
+        fn=lambda: gr.update(visible=True),
+        outputs=[session_id_download_file]
+    )
+
     generate_btn.click(
         fn=handle_generate,
         inputs=[theme_input, profile_input, num_personas_input, persona_method, example_persona_select, url_input],
@@ -1687,10 +1707,10 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
     start_session_btn.click(
         fn=start_and_monitor_sessions,
         inputs=[persona_display, last_generated_tasks_state, url_input, session_id_orch],
-        outputs=[status_output, report_output, active_session_state, active_jules_uuid_state]
+        outputs=[status_output, report_output, session_id_orch, active_jules_uuid_state]
     ).then(
         fn=lambda x: [x] * len(session_id_sync_list),
-        inputs=[active_session_state],
+        inputs=[session_id_orch],
         outputs=session_id_sync_list
     ).then(
         fn=lambda x: x,
