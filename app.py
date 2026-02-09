@@ -687,6 +687,26 @@ def check_branch_exists(repo_full_name, branch_name):
     except:
         return False
 
+def resolve_branch(repo_name, session_id, branches):
+    if not session_id:
+        return branches[0] if branches else "main"
+
+    # Try exact match
+    if session_id in branches:
+        return session_id
+
+    # Try case-insensitive exact match
+    for b in branches:
+        if b.lower() == session_id.lower():
+            return b
+
+    # Try fuzzy match (contains)
+    matches = [b for b in branches if session_id.lower() in b.lower()]
+    if matches:
+        return matches[0] # Most recent match since branches are sorted by date
+
+    return None
+
 def start_and_monitor_sessions(personas, tasks, url, session_id):
     repo_name = REPO_NAME
 
@@ -1357,12 +1377,12 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
             current_deck_idx = gr.State(0)
 
             def sl_update_branches(repo_name, session_id=None):
-                if session_id:
-                    if not check_branch_exists(repo_name, session_id):
-                        return gr.update(), f"[ERROR] Branch '{session_id}' not found. Please wait 30 minutes if newly created."
-
                 branches = get_repo_branches(repo_name)
-                latest = session_id if session_id and session_id in branches else (branches[0] if branches else "main")
+                latest = resolve_branch(repo_name, session_id, branches)
+
+                if session_id and not latest:
+                    return gr.update(), f"[ERROR] Branch matching '{session_id}' not found. Please wait 30 minutes if newly created."
+
                 log = f"[SYSTEM] Pulled latest branches from {repo_name}\n[SYSTEM] Target branch: {latest}\n[SYSTEM] Found {len(branches)} branches."
                 return gr.update(choices=branches, value=latest), log
 
@@ -1466,12 +1486,12 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
                     solutions_checkboxes.change(fn=update_selected_solutions, inputs=[solutions_checkboxes, all_solutions_state], outputs=[selected_solutions_json_state])
 
             def rv_update_branches(repo_name, session_id=None):
-                if session_id:
-                    if not check_branch_exists(repo_name, session_id):
-                        return gr.update(), f"[ERROR] Branch '{session_id}' not found. Please wait 30 minutes if newly created."
-
                 branches = get_repo_branches(repo_name)
-                latest = session_id if session_id and session_id in branches else (branches[0] if branches else "main")
+                latest = resolve_branch(repo_name, session_id, branches)
+
+                if session_id and not latest:
+                    return gr.update(), f"[ERROR] Branch matching '{session_id}' not found. Please wait 30 minutes if newly created."
+
                 log = f"[SYSTEM] Pulled latest branches from {repo_name}\n[SYSTEM] Target branch: {latest}\n[SYSTEM] Found {len(branches)} branches."
                 return gr.update(choices=branches, value=latest), log
 
@@ -1508,12 +1528,12 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
             tl_viewer = gr.Markdown(label="Thought Log Content")
 
             def tl_update_logs(repo, branch, session_id=None):
-                if session_id:
-                    if not check_branch_exists(repo, session_id):
-                        return gr.update(), f"[ERROR] Branch '{session_id}' not found. Please wait 30 minutes if newly created."
-
                 branches = get_repo_branches(repo)
-                latest = session_id if session_id and session_id in branches else (branch if branch else (branches[0] if branches else "main"))
+                latest = resolve_branch(repo, session_id, branches)
+
+                if session_id and not latest:
+                    return gr.update(), f"[ERROR] Branch matching '{session_id}' not found. Please wait 30 minutes if newly created."
+
                 log = f"[SYSTEM] Pulled latest branches from {repo}\n[SYSTEM] Target branch: {latest}"
                 logs = get_thought_logs_from_repo(repo, latest)
                 return gr.update(choices=logs, value=logs[0] if logs else None), log
