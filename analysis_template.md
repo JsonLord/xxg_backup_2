@@ -43,11 +43,7 @@ You will simulate a persona performing tasks, but the final output must read lik
 
 ### Setup (MANDATORY)
 
-Clone TinyTroupe:
-
-```bash
-git clone -b fix/jules-final-submission-branch https://github.com/JsonLord/TinyTroupe.git external/TinyTroupe
-````
+The environment is pre-configured with TinyTroupe and mkslides in the `external/` directory.
 
 Set environment variables:
 
@@ -59,12 +55,14 @@ Python configuration:
 ```python
 import sys
 import os
+# Use the pre-installed TinyTroupe from the environment
 sys.path.append(os.path.abspath("external/TinyTroupe"))
 
 from tinytroupe import config_manager
 config_manager.update("api_type", "helmholtz-blablador")
-config_manager.update("model", "alias-large")
-config_manager.update("reasoning_model", "alias-large")
+# Use alias-huge for better reliability
+config_manager.update("model", "alias-huge")
+config_manager.update("reasoning_model", "alias-huge")
 ```
 
 ---
@@ -80,16 +78,16 @@ config_manager.update("reasoning_model", "alias-large")
 
 ### Interaction Logging (MANDATORY)
 
-For EVERY action:
+For EVERY action, you must record the following using the persona's unique voice and perspective:
 
-* Internal thoughts
-* Decision rationale
-* Screenshot
-* Visual reflection (layout, hierarchy, accessibility)
+* **Internal monologue**: What the persona is thinking *in character*.
+* **Decision rationale**: Why they chose this specific action.
+* **Visual reflection**: Their subjective reaction to layout, hierarchy, and accessibility.
+* **Screenshot**: Capturing the current state.
 
-Then pass logs through TinyStyler into persona voice.
+Do NOT use external styler tools. You must embody the persona and apply their voice directly in every log entry.
 
-Persona language is REQUIRED.
+Persona language is REQUIRED and must be consistent throughout the report.
 
 ---
 
@@ -322,37 +320,43 @@ Concrete actions.
 
 ---
 
-## Visual Strategy (NO RAW HTML)
+## Visual Strategy (Strategic UX Recommendations)
 
-DO NOT embed HTML.
+DO NOT embed raw HTML code in this section. Instead, provide high-level strategic design guidance using annotated wireframe blocks and component cards.
 
-Instead produce:
+### Recommended Layout Architecture
+*   **Wireframe Blocks**: Define the spatial relationship and hierarchy of elements.
+*   **Visual Priority**: Explain which elements must command user attention.
+*   **Typography & Color Strategy**: Connect visual choices to the brand's psychological goals (e.g., "Use high-contrast serif headers to establish authority").
 
-* Annotated wireframe blocks
-* Layout diagrams
-* Component cards
-
-Example:
-
+Example Wireframe:
 ```
-[ HERO ]
-→ Trust signal
-→ Primary CTA
+[ TOP NAV ]
+  → Explicit Search (Current: Hidden)
+  → Cart with Item Count (Current: Static Icon)
 
-[ STORY ]
-→ Provenance
-→ Farmer
+[ HERO SECTION ]
+  → Headline: Benefit-oriented (Current: Features-oriented)
+  → High-Contrast Primary CTA (Current: Low contrast)
 
-[ PRODUCT GRID ]
-→ Cards
-→ Add to cart
+[ PROBLEM AREA: PRODUCT GRID ]
+  → Quick View option
+  → Badge: "Persona Choice" or "Best Value"
 ```
 
 ---
 
-## Accessibility Snapshot
+## Accessibility & Inclusive Design Snapshot
 
-WCAG risks with severity.
+Document specific WCAG (Web Content Accessibility Guidelines) failures and their impact on different user groups.
+
+| WCAG Criteria | Issue Description | User Impact | Severity |
+|---------------|-------------------|-------------|----------|
+| 1.4.3 Contrast| Low contrast on CTA| Vision-impaired users miss action | High |
+| 2.1.1 Keyboard| Modal not escapable| Motor-impaired users get trapped | Critical |
+| 4.1.2 Name/Role| Icon buttons no label| Screen reader users lost | High |
+
+Provide concrete steps for remediation for each identified risk.
 
 ---
 
@@ -398,22 +402,13 @@ For best rendering in the orchestrator app:
 
 ---
 
-### mkslides Integration (MANDATORY)
+### Presentation Rendering (MANDATORY)
 
-Clone:
-
-```bash
-git clone --recursive https://github.com/MartenBE/mkslides.git external/mkslides
-cd external/mkslides
-# Ensure compatibility
-sed -i 's/requires-python = ">=3.13"/requires-python = ">=3.12"/' pyproject.toml
-pip install .
-```
-
-Then render:
+Use the pre-installed `mkslides` tool to generate the final Reveal.js presentation.
 
 ```bash
-mkslides build ../user_experience_reports/slides/ --site-dir ../user_experience_reports/slides_rendered/
+# Ensure you are in the project root
+mkslides build user_experience_reports/slides/ --site-dir user_experience_reports/slides_rendered/
 ```
 
 ---

@@ -5,7 +5,14 @@ __pycache__/
 app_output.log
 *.png
 verification/
-external/
 site/
 test_slides/
-__pycache__/
+user_experience_reports/slides_rendered/
+user_experience_reports/heatmaps/
+user_experience_reports/thought_logs/
+user_experience_reports/solutions/
+user_experience_reports/screenshots/
+user_experience_reports/report_*.md
+*.log
+node_modules/
+.pytest_cache/
