@@ -27,7 +27,7 @@ You will simulate a persona performing tasks, but the final output must read lik
 1. **Sequential Execution**: Perform the 10 tasks provided in `{{tasks_list}}` one by one.
 2. **Coordinate Tracking**: For every click or interaction, record the (x, y) coordinates relative to the viewport.
 3. **Heatmap Generation**: After completing all tasks, generate "Average User Journey Heatmaps" by overlaying the recorded interaction points onto screenshots of the relevant pages.
-   - Save these heatmap images as PNG files in `/user_experience_reports/heatmaps/`.
+   - Save these heatmap images as PNG files in `/user_experience_reports/images/`.
    - Name them descriptively and include the problem category or task goal in the filename, e.g., `heatmap_navigation_friction.png`, `heatmap_purchase_confusion.png`, `average_journey_heatmap.png`.
    - Ensure these heatmaps are categorized by the UX problems you identify later in the report.
 4. **Thought Logs & Text Analysis**: Throughout the simulation, maintain a detailed record of your persona's internal monologue and decision-making process.

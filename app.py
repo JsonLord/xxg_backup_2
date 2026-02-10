@@ -1043,14 +1043,18 @@ def get_heatmaps_from_repo(repo_full_name, branch_name):
     try:
         repo = gh.get_repo(repo_full_name)
         add_log(f"Scanning branch {branch_name} for heatmaps...")
-        try:
-            contents = repo.get_contents("user_experience_reports/heatmaps", ref=branch_name)
-            heatmaps = []
-            for c in contents:
-                if c.name.endswith(".png"):
-                    # Categorize by filename - Extract problem category
-                    # Expected format: heatmap_problem_category_id.png
-                    raw_name = c.name.replace(".png", "").replace("heatmap_", "")
+
+        heatmap_sources = ["user_experience_reports/images", "user_experience_reports/heatmaps"]
+        heatmaps = []
+
+        for source in heatmap_sources:
+            try:
+                contents = repo.get_contents(source, ref=branch_name)
+                for c in contents:
+                    if c.name.endswith(".png"):
+                        # Categorize by filename - Extract problem category
+                        # Expected format: heatmap_problem_category_id.png
+                        raw_name = c.name.replace(".png", "").replace("heatmap_", "")
                     parts = raw_name.split("_")
                     if len(parts) > 1:
                         category = parts[0].title()
@@ -1059,13 +1063,14 @@ def get_heatmaps_from_repo(repo_full_name, branch_name):
                     else:
                         name = raw_name.replace("_", " ").title()
 
-                    heatmaps.append((c.download_url, name))
+                    if (c.download_url, name) not in heatmaps:
+                        heatmaps.append((c.download_url, name))
+            except:
+                continue
 
-            # Sort by name to group categories together
-            heatmaps.sort(key=lambda x: x[1])
-            return heatmaps
-        except:
-            return []
+        # Sort by name to group categories together
+        heatmaps.sort(key=lambda x: x[1])
+        return heatmaps
     except Exception as e:
         add_log(f"Error fetching heatmaps: {e}")
         return []
@@ -1110,6 +1115,87 @@ def get_solutions_from_repo(repo_full_name, branch_name):
     except Exception as e:
         add_log(f"Error fetching solutions: {e}")
         return []
+
+def smart_load_report(repo_name, session_id):
+    branches = get_repo_branches(repo_name)
+    latest_branch = resolve_branch(repo_name, session_id, branches)
+    if not latest_branch:
+        return gr.update(choices=branches), None, f"Branch matching '{session_id}' not found.", f"[ERROR] Branch matching '{session_id}' not found."
+
+    reports = get_reports_in_branch(repo_name, latest_branch, filter_type="report")
+    best_report = None
+    if session_id:
+        for r in reports:
+            if session_id.lower() in r.lower():
+                best_report = r
+                break
+
+    if not best_report and reports:
+        best_report = reports[0]
+
+    content = ""
+    if best_report:
+        content = get_report_content(repo_name, latest_branch, best_report)
+
+    log = f"[SYSTEM] Pulled latest branches from {repo_name}\n[SYSTEM] Target branch: {latest_branch}\n[SYSTEM] Found {len(branches)} branches.\n[SYSTEM] Auto-loaded: {best_report}"
+    return gr.update(choices=branches, value=latest_branch), gr.update(choices=reports, value=best_report), content, log
+
+def smart_load_slides(repo_name, session_id):
+    branches = get_repo_branches(repo_name)
+    latest_branch = resolve_branch(repo_name, session_id, branches)
+    if not latest_branch:
+        return gr.update(choices=branches), None, f"Branch matching '{session_id}' not found.", f"[ERROR] Branch matching '{session_id}' not found."
+
+    slides_options = get_reports_in_branch(repo_name, latest_branch, filter_type="slides")
+    best_slides = None
+    # Priority 1: user_experience_reports/slides (folder)
+    # Priority 2: slides.md containing session_id
+    # Priority 3: first slides option
+
+    for s in slides_options:
+        if s == "user_experience_reports/slides":
+            best_slides = s
+            break
+
+    if not best_slides and session_id:
+        for s in slides_options:
+            if session_id.lower() in s.lower():
+                best_slides = s
+                break
+
+    if not best_slides and slides_options:
+        best_slides = slides_options[0]
+
+    html = ""
+    if best_slides:
+        html = render_slides(repo_name, latest_branch, best_slides)
+
+    log = f"[SYSTEM] Pulled latest branches from {repo_name}\n[SYSTEM] Target branch: {latest_branch}\n[SYSTEM] Found {len(branches)} branches.\n[SYSTEM] Auto-loaded slides: {best_slides}"
+    return gr.update(choices=branches, value=latest_branch), html, log
+
+def smart_load_thoughts(repo_name, session_id):
+    branches = get_repo_branches(repo_name)
+    latest_branch = resolve_branch(repo_name, session_id, branches)
+    if not latest_branch:
+        return gr.update(choices=branches), None, f"Branch matching '{session_id}' not found.", f"[ERROR] Branch matching '{session_id}' not found."
+
+    logs = get_thought_logs_from_repo(repo_name, latest_branch)
+    best_log = None
+    if session_id:
+        for l in logs:
+            if session_id.lower() in l.lower():
+                best_log = l
+                break
+
+    if not best_log and logs:
+        best_log = logs[0]
+
+    content = ""
+    if best_log:
+        content = get_report_content(repo_name, latest_branch, best_log)
+
+    log = f"[SYSTEM] Pulled latest branches from {repo_name}\n[SYSTEM] Target branch: {latest_branch}\n[SYSTEM] Found {len(branches)} branches.\n[SYSTEM] Auto-loaded log: {best_log}"
+    return gr.update(choices=branches, value=latest_branch), gr.update(choices=logs, value=best_log), content, log
 
 def get_thought_logs_from_repo(repo_full_name, branch_name):
     if not gh or not repo_full_name or not branch_name:
@@ -1190,21 +1276,40 @@ def generate_full_ui_call(repo, branch, session_id, selected_solutions_json, url
         add_log(f"API Error: {response.text}")
         return f"❌ Error: {response.text}"
 
-def poll_for_generated_ui(repo_full_name, branch_name, session_id):
-    if not gh or not repo_full_name or not branch_name or not session_id:
+def poll_for_generated_ui(repo_full_name, session_id):
+    if not gh or not repo_full_name or not session_id:
         return None
     try:
-        repo = gh.get_repo(repo_full_name)
-        path = f"user_experience_reports/generated_ui_{session_id[:8]}.html"
-        file_content = repo.get_contents(path, ref=branch_name)
-        return f'<iframe src="{file_content.download_url}" width="100%" height="800px" frameborder="0"></iframe>'
-    except:
-        return "UI not generated yet. Please wait..."
+        branches = get_repo_branches(repo_full_name)
+        latest = resolve_branch(repo_full_name, session_id, branches)
+        if not latest:
+            return "Branch not found."
 
-def blablador_chat_adaptation(message="", history=[], jules_uuid=""):
+        repo = gh.get_repo(repo_full_name)
+        # Try a few variations of the path
+        possible_paths = [
+            f"user_experience_reports/generated_ui_{session_id[:8]}.html",
+            f"user_experience_reports/generated_ui_{session_id}.html"
+        ]
+
+        for path in possible_paths:
+            try:
+                file_content = repo.get_contents(path, ref=latest)
+                return f'<iframe src="{file_content.download_url}" width="100%" height="800px" frameborder="0"></iframe>'
+            except:
+                continue
+
+        return "UI not generated yet. Please wait..."
+    except Exception as e:
+        return f"Error polling for UI: {e}"
+
+def blablador_chat_adaptation(message="", history=None, jules_uuid=""):
+    if history is None:
+        history = []
     print(f"DEBUG: blablador_chat_adaptation called with message='{message}', history='{history}', jules_uuid='{jules_uuid}'")
     if not BLABLADOR_API_KEY or not jules_uuid:
-        return history + [("System", "Error: BLABLADOR_API_KEY or Jules UUID missing.")], ""
+        history.append(("System", "Error: BLABLADOR_API_KEY or Jules UUID missing."))
+        return history, ""
 
     # This should call sendMessage to the same session_id for real-time adaptation
     # but also use alias-code for the chat experience if desired.
@@ -1397,29 +1502,6 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
                 log = f"[SYSTEM] Pulled latest branches from {repo_name}\n[SYSTEM] Target branch: {latest}\n[SYSTEM] Found {len(branches)} branches."
                 return gr.update(choices=branches, value=latest), log
 
-            def sl_auto_render(repo, branch):
-                reports = get_reports_in_branch(repo, branch, filter_type="slides")
-                default_val = None
-                # Prioritize the standard slides folder
-                if "user_experience_reports/slides" in reports:
-                    default_val = "user_experience_reports/slides"
-                elif reports:
-                    default_val = reports[0]
-
-                html = ""
-                carousel_visible = gr.update(visible=False)
-                status_text = "No slide decks discovered."
-                counter_text = ""
-                idx = 0
-
-                if default_val:
-                    html = render_slides(repo, branch, default_val)
-                    status_text = f"✅ Found and loaded slides folder: `{default_val}`"
-                    if len(reports) > 1:
-                        carousel_visible = gr.update(visible=True)
-                        counter_text = f"Deck 1 of {len(reports)}: {default_val}"
-
-                return status_text, reports, html, carousel_visible, idx, counter_text
 
             sl_repo_select.change(fn=sl_update_branches, inputs=[sl_repo_select], outputs=[sl_branch_select, sl_terminal_log])
 
@@ -1439,11 +1521,46 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
                 counter_text = f"Deck {new_idx + 1} of {len(decks)}: {decks[new_idx]}"
                 return html, new_idx, counter_text
 
-            sl_refresh_branches_btn.click(fn=sl_update_branches, inputs=[sl_repo_select, session_id_carousel], outputs=[sl_branch_select, sl_terminal_log])
+            sl_refresh_branches_btn.click(fn=smart_load_slides, inputs=[sl_repo_select, session_id_carousel], outputs=[sl_branch_select, slideshow_display, sl_terminal_log])
+
+            def sl_smart_auto_render(repo, branch, session_id):
+                reports = get_reports_in_branch(repo, branch, filter_type="slides")
+                best = None
+
+                # Priority 1: user_experience_reports/slides (folder)
+                if "user_experience_reports/slides" in reports:
+                    best = "user_experience_reports/slides"
+
+                # Priority 2: contains session_id
+                if not best and session_id:
+                    for r in reports:
+                        if session_id.lower() in r.lower():
+                            best = r
+                            break
+
+                # Priority 3: first option
+                if not best and reports:
+                    best = reports[0]
+
+                html = ""
+                carousel_visible = gr.update(visible=False)
+                status_text = "No slide decks discovered."
+                counter_text = ""
+                idx = 0
+
+                if best:
+                    html = render_slides(repo, branch, best)
+                    status_text = f"✅ Auto-loaded slides: `{best}`"
+                    if len(reports) > 1:
+                        carousel_visible = gr.update(visible=True)
+                        idx = reports.index(best)
+                        counter_text = f"Deck {idx + 1} of {len(reports)}: {best}"
+
+                return status_text, reports, html, carousel_visible, idx, counter_text
 
             sl_branch_select.change(
-                fn=sl_auto_render,
-                inputs=[sl_repo_select, sl_branch_select],
+                fn=sl_smart_auto_render,
+                inputs=[sl_repo_select, sl_branch_select, session_id_carousel],
                 outputs=[sl_status_display, all_decks_state, slideshow_display, carousel_controls, current_deck_idx, deck_counter]
             )
 
@@ -1506,17 +1623,26 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
                 log = f"[SYSTEM] Pulled latest branches from {repo_name}\n[SYSTEM] Target branch: {latest}\n[SYSTEM] Found {len(branches)} branches."
                 return gr.update(choices=branches, value=latest), log
 
-            def rv_update_reports(repo_name, branch_name):
-                reports = get_reports_in_branch(repo_name, branch_name, filter_type="report")
-                return gr.update(choices=reports, value=reports[0] if reports else None)
 
             rv_repo_select.change(fn=rv_update_branches, inputs=[rv_repo_select], outputs=[rv_branch_select, rv_terminal_log])
             def rv_load_wrapper(repo, branch, selected, manual):
                 path = manual if manual else selected
                 return get_report_content(repo, branch, path)
 
-            rv_refresh_branches_btn.click(fn=rv_update_branches, inputs=[rv_repo_select, session_id_rv], outputs=[rv_branch_select, rv_terminal_log])
-            rv_branch_select.change(fn=rv_update_reports, inputs=[rv_repo_select, rv_branch_select], outputs=[rv_report_select])
+            rv_refresh_branches_btn.click(fn=smart_load_report, inputs=[rv_repo_select, session_id_rv], outputs=[rv_branch_select, rv_report_select, rv_report_viewer, rv_terminal_log])
+            def rv_smart_update_reports(repo, branch, session_id):
+                reports = get_reports_in_branch(repo, branch, filter_type="report")
+                best = None
+                if session_id:
+                    for r in reports:
+                        if session_id.lower() in r.lower():
+                            best = r
+                            break
+                if not best and reports:
+                    best = reports[0]
+                return gr.update(choices=reports, value=best)
+
+            rv_branch_select.change(fn=rv_smart_update_reports, inputs=[rv_repo_select, rv_branch_select, session_id_rv], outputs=[rv_report_select])
             rv_load_report_btn.click(fn=rv_load_wrapper, inputs=[rv_repo_select, rv_branch_select, rv_report_select, rv_manual_path], outputs=[rv_report_viewer])
 
         with gr.Tab("Persona Thought Logs"):
@@ -1538,18 +1664,22 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
 
             tl_viewer = gr.Markdown(label="Thought Log Content")
 
-            def tl_update_logs(repo, branch, session_id=None):
-                branches = get_repo_branches(repo)
-                latest = resolve_branch(repo, session_id, branches)
 
-                if session_id and not latest:
-                    return gr.update(), f"[ERROR] Branch matching '{session_id}' not found. Please wait 30 minutes if newly created."
+            def tl_smart_update_logs(repo, branch, session_id):
+                logs = get_thought_logs_from_repo(repo, branch)
+                best = None
+                if session_id:
+                    for l in logs:
+                        if session_id.lower() in l.lower():
+                            best = l
+                            break
+                if not best and logs:
+                    best = logs[0]
+                return gr.update(choices=logs, value=best)
 
-                log = f"[SYSTEM] Pulled latest branches from {repo}\n[SYSTEM] Target branch: {latest}"
-                logs = get_thought_logs_from_repo(repo, latest)
-                return gr.update(choices=logs, value=logs[0] if logs else None), log
+            tl_branch_select.change(fn=tl_smart_update_logs, inputs=[tl_repo_select, tl_branch_select, session_id_tl], outputs=[tl_log_select])
 
-            tl_refresh_btn.click(fn=tl_update_logs, inputs=[tl_repo_select, tl_branch_select, session_id_tl], outputs=[tl_log_select, tl_terminal_log])
+            tl_refresh_btn.click(fn=smart_load_thoughts, inputs=[tl_repo_select, session_id_tl], outputs=[tl_branch_select, tl_log_select, tl_viewer, tl_terminal_log])
             tl_load_btn.click(fn=get_report_content, inputs=[tl_repo_select, tl_branch_select, tl_log_select], outputs=[tl_viewer])
 
         with gr.Tab("Average User Journey Heatmaps"):
@@ -1560,7 +1690,14 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
             refresh_heatmaps_btn = gr.Button("Refresh Heatmaps")
             heatmap_gallery = gr.Gallery(label="User Interaction Heatmaps", columns=2)
 
-            refresh_heatmaps_btn.click(fn=get_heatmaps_from_repo, inputs=[rv_repo_select, rv_branch_select], outputs=[heatmap_gallery])
+            def smart_load_heatmaps_ui(repo, session_id):
+                branches = get_repo_branches(repo)
+                latest = resolve_branch(repo, session_id, branches)
+                if not latest:
+                    return []
+                return get_heatmaps_from_repo(repo, latest)
+
+            refresh_heatmaps_btn.click(fn=smart_load_heatmaps_ui, inputs=[rv_repo_select, session_id_hm], outputs=[heatmap_gallery])
 
         with gr.Tab("Agents.txt"):
             gr.Markdown("### Coding Agent Prompt")
@@ -1591,7 +1728,7 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
                     ui_chat_send = gr.Button("Send Request")
 
             generate_full_ui_btn.click(fn=generate_full_ui_call, inputs=[rv_repo_select, rv_branch_select, jules_uuid_ui, selected_solutions_json_state, url_input], outputs=[full_ui_iframe])
-            refresh_ui_btn.click(fn=poll_for_generated_ui, inputs=[rv_repo_select, rv_branch_select, session_id_ui], outputs=[full_ui_iframe])
+            refresh_ui_btn.click(fn=poll_for_generated_ui, inputs=[rv_repo_select, session_id_ui], outputs=[full_ui_iframe])
             ui_chat_send.click(fn=blablador_chat_adaptation, inputs=[ui_chat_msg, ui_chatbot, jules_uuid_ui], outputs=[ui_chatbot, ui_chat_msg])
 
 
