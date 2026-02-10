@@ -1171,7 +1171,7 @@ def smart_load_slides(repo_name, session_id):
     latest_branch = resolve_branch(repo_name, session_id, branches)
     recovered_uuid = find_jules_session_by_id(session_id)
     if not latest_branch:
-        return gr.update(choices=branches), None, f"Branch matching '{session_id}' not found.", f"[ERROR] Branch matching '{session_id}' not found.", recovered_uuid
+        return gr.update(choices=branches), None, f"Branch matching '{session_id}' not found.", f"[ERROR] Branch matching '{session_id}' not found.", recovered_uuid, [], gr.update(visible=False), 0, ""
 
     slides_options = get_reports_in_branch(repo_name, latest_branch, filter_type="slides")
     best_slides = None
@@ -1194,11 +1194,18 @@ def smart_load_slides(repo_name, session_id):
         best_slides = slides_options[0]
 
     html = ""
+    carousel_visible = gr.update(visible=False)
+    counter_text = ""
+    idx = 0
     if best_slides:
         html = render_slides(repo_name, latest_branch, best_slides)
+        if len(slides_options) > 1:
+            carousel_visible = gr.update(visible=True)
+            idx = slides_options.index(best_slides)
+            counter_text = f"Deck {idx + 1} of {len(slides_options)}: {best_slides}"
 
     log = f"[SYSTEM] Pulled latest branches from {repo_name}\n[SYSTEM] Target branch: {latest_branch}\n[SYSTEM] Found {len(branches)} branches.\n[SYSTEM] Auto-loaded slides: {best_slides}"
-    return gr.update(choices=branches, value=latest_branch), html, log, recovered_uuid
+    return gr.update(choices=branches, value=latest_branch), html, log, recovered_uuid, slides_options, carousel_visible, idx, counter_text
 
 def smart_load_thoughts(repo_name, session_id):
     branches = get_repo_branches(repo_name)
@@ -1428,6 +1435,8 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
     all_solutions_state = gr.State([])
     selected_solutions_json_state = gr.State("[]")
 
+    jules_uuid_ui = gr.Textbox(label="System UUID", placeholder="Automatically filled after analysis...", render=False)
+
     with gr.Tabs():
         with gr.Tab("Analysis Orchestrator"):
             gr.Markdown("### Start New Analysis Sessions")
@@ -1568,7 +1577,7 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
                 counter_text = f"Deck {new_idx + 1} of {len(decks)}: {decks[new_idx]}"
                 return html, new_idx, counter_text
 
-            sl_refresh_branches_btn.click(fn=smart_load_slides, inputs=[sl_repo_select, session_id_carousel], outputs=[sl_branch_select, slideshow_display, sl_terminal_log, jules_uuid_ui])
+            sl_refresh_branches_btn.click(fn=smart_load_slides, inputs=[sl_repo_select, session_id_carousel], outputs=[sl_branch_select, slideshow_display, sl_terminal_log, jules_uuid_ui, all_decks_state, carousel_controls, current_deck_idx, deck_counter])
 
             def sl_smart_auto_render(repo, branch, session_id):
                 reports = get_reports_in_branch(repo, branch, filter_type="slides")
@@ -1765,7 +1774,7 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
             with gr.Row():
                 session_id_ui = gr.Textbox(label="Session ID", placeholder="Enter Session ID (GitHub Branch Name)...")
                 session_id_sync_list.append(session_id_ui)
-                jules_uuid_ui = gr.Textbox(label="System UUID", placeholder="Automatically filled after analysis...")
+                jules_uuid_ui.render()
             with gr.Row():
                 with gr.Column(scale=3):
                     gr.Markdown("### Generated Landing Page")
