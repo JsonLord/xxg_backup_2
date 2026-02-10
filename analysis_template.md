@@ -38,7 +38,7 @@ You will simulate a persona performing tasks, but the final output must read lik
 5. **Problem Identification & UI Solutions**: For every UX problem identified during the tasks:
    - Categorize the problem.
    - Propose a "Better UI" solution.
-   - Provide a functional code snippet (HTML/CSS/JS) for the improved component.
+   - **Code-Driven Visual Solutions**: Provide a self-contained, functional code snippet (HTML/CSS/JS) for the improved component. These snippets should be visual-ready and demonstrate the recommended styling and layout changes.
    - Include these in the final report markdown and also save individual snippets to `/user_experience_reports/solutions/problem_{id}.md`.
 
 ### Setup (MANDATORY)

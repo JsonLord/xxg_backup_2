@@ -695,6 +695,31 @@ def download_session_id_file(session_id):
         f.write(session_id)
     return file_path
 
+def find_jules_session_by_id(session_id):
+    if not ANALYSIS_API_KEY or not session_id:
+        return None
+
+    headers = {
+        "X-Goog-Api-Key": ANALYSIS_API_KEY,
+        "Content-Type": "application/json"
+    }
+
+    try:
+        add_log(f"Searching for Jules session matching ID: {session_id}...")
+        response = requests.get(f"{ANALYSIS_API_URL}/sessions", headers=headers)
+        if response.status_code == 200:
+            sessions = response.json().get("sessions", [])
+            for s in sessions:
+                title = s.get("title", "")
+                if f"({session_id})" in title or session_id in title:
+                    name = s.get("name")
+                    add_log(f"Found Jules session: {name} (Title: {title})")
+                    return name
+        return None
+    except Exception as e:
+        print(f"Error finding Jules session: {e}")
+        return None
+
 def resolve_branch(repo_name, session_id, branches):
     if not session_id:
         return branches[0] if branches else "main"
@@ -1119,8 +1144,9 @@ def get_solutions_from_repo(repo_full_name, branch_name):
 def smart_load_report(repo_name, session_id):
     branches = get_repo_branches(repo_name)
     latest_branch = resolve_branch(repo_name, session_id, branches)
+    recovered_uuid = find_jules_session_by_id(session_id)
     if not latest_branch:
-        return gr.update(choices=branches), None, f"Branch matching '{session_id}' not found.", f"[ERROR] Branch matching '{session_id}' not found."
+        return gr.update(choices=branches), None, f"Branch matching '{session_id}' not found.", f"[ERROR] Branch matching '{session_id}' not found.", recovered_uuid
 
     reports = get_reports_in_branch(repo_name, latest_branch, filter_type="report")
     best_report = None
@@ -1138,13 +1164,14 @@ def smart_load_report(repo_name, session_id):
         content = get_report_content(repo_name, latest_branch, best_report)
 
     log = f"[SYSTEM] Pulled latest branches from {repo_name}\n[SYSTEM] Target branch: {latest_branch}\n[SYSTEM] Found {len(branches)} branches.\n[SYSTEM] Auto-loaded: {best_report}"
-    return gr.update(choices=branches, value=latest_branch), gr.update(choices=reports, value=best_report), content, log
+    return gr.update(choices=branches, value=latest_branch), gr.update(choices=reports, value=best_report), content, log, recovered_uuid
 
 def smart_load_slides(repo_name, session_id):
     branches = get_repo_branches(repo_name)
     latest_branch = resolve_branch(repo_name, session_id, branches)
+    recovered_uuid = find_jules_session_by_id(session_id)
     if not latest_branch:
-        return gr.update(choices=branches), None, f"Branch matching '{session_id}' not found.", f"[ERROR] Branch matching '{session_id}' not found."
+        return gr.update(choices=branches), None, f"Branch matching '{session_id}' not found.", f"[ERROR] Branch matching '{session_id}' not found.", recovered_uuid
 
     slides_options = get_reports_in_branch(repo_name, latest_branch, filter_type="slides")
     best_slides = None
@@ -1171,13 +1198,14 @@ def smart_load_slides(repo_name, session_id):
         html = render_slides(repo_name, latest_branch, best_slides)
 
     log = f"[SYSTEM] Pulled latest branches from {repo_name}\n[SYSTEM] Target branch: {latest_branch}\n[SYSTEM] Found {len(branches)} branches.\n[SYSTEM] Auto-loaded slides: {best_slides}"
-    return gr.update(choices=branches, value=latest_branch), html, log
+    return gr.update(choices=branches, value=latest_branch), html, log, recovered_uuid
 
 def smart_load_thoughts(repo_name, session_id):
     branches = get_repo_branches(repo_name)
     latest_branch = resolve_branch(repo_name, session_id, branches)
+    recovered_uuid = find_jules_session_by_id(session_id)
     if not latest_branch:
-        return gr.update(choices=branches), None, f"Branch matching '{session_id}' not found.", f"[ERROR] Branch matching '{session_id}' not found."
+        return gr.update(choices=branches), None, f"Branch matching '{session_id}' not found.", f"[ERROR] Branch matching '{session_id}' not found.", recovered_uuid
 
     logs = get_thought_logs_from_repo(repo_name, latest_branch)
     best_log = None
@@ -1195,7 +1223,7 @@ def smart_load_thoughts(repo_name, session_id):
         content = get_report_content(repo_name, latest_branch, best_log)
 
     log = f"[SYSTEM] Pulled latest branches from {repo_name}\n[SYSTEM] Target branch: {latest_branch}\n[SYSTEM] Found {len(branches)} branches.\n[SYSTEM] Auto-loaded log: {best_log}"
-    return gr.update(choices=branches, value=latest_branch), gr.update(choices=logs, value=best_log), content, log
+    return gr.update(choices=branches, value=latest_branch), gr.update(choices=logs, value=best_log), content, log, recovered_uuid
 
 def get_thought_logs_from_repo(repo_full_name, branch_name):
     if not gh or not repo_full_name or not branch_name:
@@ -1243,8 +1271,17 @@ You are an expert Frontend Developer. Your task is to implement the following "L
     return prompt
 
 def generate_full_ui_call(repo, branch, session_id, selected_solutions_json, url):
-    if not ANALYSIS_API_KEY or not session_id:
-        return "Error: API Key or Session ID missing. Start a session first."
+    if not ANALYSIS_API_KEY:
+        return "Error: ANALYSIS_API_KEY missing."
+
+    # Try to recover session_id (the jules uuid) if it looks like a branch name or is missing
+    target_uuid = session_id
+    if not target_uuid or not target_uuid.startswith("sessions/"):
+        recovered = find_jules_session_by_id(branch or session_id)
+        if recovered:
+            target_uuid = recovered
+        else:
+            return f"Error: Could not find a Jules session for ID '{session_id}' or branch '{branch}'."
 
     try:
         if not os.path.exists("ui_generation_template.md"):
@@ -1268,8 +1305,10 @@ def generate_full_ui_call(repo, branch, session_id, selected_solutions_json, url
         "prompt": prompt
     }
 
-    add_log(f"Sending UI generation request to session {session_id}...")
-    response = requests.post(f"{ANALYSIS_API_URL}/sessions/{session_id}:sendMessage", headers=headers, json=data)
+    add_log(f"Sending UI generation request to session {target_uuid}...")
+    # Ensure target_uuid is used in the URL. If it already starts with 'sessions/', don't prepend it.
+    url_suffix = target_uuid if target_uuid.startswith("sessions/") else f"sessions/{target_uuid}"
+    response = requests.post(f"{ANALYSIS_API_URL}/{url_suffix}:sendMessage", headers=headers, json=data)
     if response.status_code == 200:
         return f"✅ UI generation requested for session {session_id}. Please wait a few minutes and refresh."
     else:
@@ -1303,15 +1342,22 @@ def poll_for_generated_ui(repo_full_name, session_id):
     except Exception as e:
         return f"Error polling for UI: {e}"
 
-def blablador_chat_adaptation(message="", history=None, jules_uuid=""):
+def blablador_chat_adaptation(message="", history=None, jules_uuid="", session_id=""):
     if history is None:
         history = []
-    print(f"DEBUG: blablador_chat_adaptation called with message='{message}', history='{history}', jules_uuid='{jules_uuid}'")
-    if not BLABLADOR_API_KEY or not jules_uuid:
-        history.append(("System", "Error: BLABLADOR_API_KEY or Jules UUID missing."))
+
+    target_uuid = jules_uuid
+    if not target_uuid or not target_uuid.startswith("sessions/"):
+        recovered = find_jules_session_by_id(session_id)
+        if recovered:
+            target_uuid = recovered
+
+    print(f"DEBUG: blablador_chat_adaptation called with message='{message}', history='{history}', target_uuid='{target_uuid}'")
+    if not BLABLADOR_API_KEY or not target_uuid:
+        history.append(("System", "Error: BLABLADOR_API_KEY or target Jules UUID missing."))
         return history, ""
 
-    # This should call sendMessage to the same session_id for real-time adaptation
+    # This should call sendMessage to the same target_uuid for real-time adaptation
     # but also use alias-code for the chat experience if desired.
     # The user asked to call alias-code model on blablador endpoint.
 
@@ -1327,7 +1373,8 @@ def blablador_chat_adaptation(message="", history=None, jules_uuid=""):
 
         # Also notify Jules session to actually do the work if needed
         headers = {"X-Goog-Api-Key": ANALYSIS_API_KEY, "Content-Type": "application/json"}
-        requests.post(f"{ANALYSIS_API_URL}/sessions/{jules_uuid}:sendMessage", headers=headers, json={"prompt": message})
+        url_suffix = target_uuid if target_uuid.startswith("sessions/") else f"sessions/{target_uuid}"
+        requests.post(f"{ANALYSIS_API_URL}/{url_suffix}:sendMessage", headers=headers, json={"prompt": message})
 
         history.append((message, agent_msg))
         return history, ""
@@ -1521,7 +1568,7 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
                 counter_text = f"Deck {new_idx + 1} of {len(decks)}: {decks[new_idx]}"
                 return html, new_idx, counter_text
 
-            sl_refresh_branches_btn.click(fn=smart_load_slides, inputs=[sl_repo_select, session_id_carousel], outputs=[sl_branch_select, slideshow_display, sl_terminal_log])
+            sl_refresh_branches_btn.click(fn=smart_load_slides, inputs=[sl_repo_select, session_id_carousel], outputs=[sl_branch_select, slideshow_display, sl_terminal_log, jules_uuid_ui])
 
             def sl_smart_auto_render(repo, branch, session_id):
                 reports = get_reports_in_branch(repo, branch, filter_type="slides")
@@ -1599,6 +1646,7 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
                     gr.Markdown("Select the solutions you want to include in the full UI generation.")
                     solutions_checkboxes = gr.CheckboxGroup(label="Identified UI Improvements", choices=[])
                     refresh_solutions_btn = gr.Button("Scan for Solutions")
+                    solutions_preview = gr.Markdown(label="Solution Previews")
 
                     def refresh_solutions_ui(repo, branch):
                         sols = get_solutions_from_repo(repo, branch)
@@ -1609,9 +1657,12 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
 
                     def update_selected_solutions(selected_names, all_sols):
                         selected = [s for s in all_sols if s["name"] in selected_names]
-                        return json.dumps(selected)
+                        preview_md = ""
+                        for s in selected:
+                            preview_md += f"### {s['name']}\n{s['content']}\n\n---\n\n"
+                        return json.dumps(selected), preview_md
 
-                    solutions_checkboxes.change(fn=update_selected_solutions, inputs=[solutions_checkboxes, all_solutions_state], outputs=[selected_solutions_json_state])
+                    solutions_checkboxes.change(fn=update_selected_solutions, inputs=[solutions_checkboxes, all_solutions_state], outputs=[selected_solutions_json_state, solutions_preview])
 
             def rv_update_branches(repo_name, session_id=None):
                 branches = get_repo_branches(repo_name)
@@ -1629,7 +1680,7 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
                 path = manual if manual else selected
                 return get_report_content(repo, branch, path)
 
-            rv_refresh_branches_btn.click(fn=smart_load_report, inputs=[rv_repo_select, session_id_rv], outputs=[rv_branch_select, rv_report_select, rv_report_viewer, rv_terminal_log])
+            rv_refresh_branches_btn.click(fn=smart_load_report, inputs=[rv_repo_select, session_id_rv], outputs=[rv_branch_select, rv_report_select, rv_report_viewer, rv_terminal_log, jules_uuid_ui])
             def rv_smart_update_reports(repo, branch, session_id):
                 reports = get_reports_in_branch(repo, branch, filter_type="report")
                 best = None
@@ -1679,7 +1730,7 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
 
             tl_branch_select.change(fn=tl_smart_update_logs, inputs=[tl_repo_select, tl_branch_select, session_id_tl], outputs=[tl_log_select])
 
-            tl_refresh_btn.click(fn=smart_load_thoughts, inputs=[tl_repo_select, session_id_tl], outputs=[tl_branch_select, tl_log_select, tl_viewer, tl_terminal_log])
+            tl_refresh_btn.click(fn=smart_load_thoughts, inputs=[tl_repo_select, session_id_tl], outputs=[tl_branch_select, tl_log_select, tl_viewer, tl_terminal_log, jules_uuid_ui])
             tl_load_btn.click(fn=get_report_content, inputs=[tl_repo_select, tl_branch_select, tl_log_select], outputs=[tl_viewer])
 
         with gr.Tab("Average User Journey Heatmaps"):
@@ -1693,11 +1744,12 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
             def smart_load_heatmaps_ui(repo, session_id):
                 branches = get_repo_branches(repo)
                 latest = resolve_branch(repo, session_id, branches)
+                recovered_uuid = find_jules_session_by_id(session_id)
                 if not latest:
-                    return []
-                return get_heatmaps_from_repo(repo, latest)
+                    return [], recovered_uuid
+                return get_heatmaps_from_repo(repo, latest), recovered_uuid
 
-            refresh_heatmaps_btn.click(fn=smart_load_heatmaps_ui, inputs=[rv_repo_select, session_id_hm], outputs=[heatmap_gallery])
+            refresh_heatmaps_btn.click(fn=smart_load_heatmaps_ui, inputs=[rv_repo_select, session_id_hm], outputs=[heatmap_gallery, jules_uuid_ui])
 
         with gr.Tab("Agents.txt"):
             gr.Markdown("### Coding Agent Prompt")
@@ -1729,7 +1781,7 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
 
             generate_full_ui_btn.click(fn=generate_full_ui_call, inputs=[rv_repo_select, rv_branch_select, jules_uuid_ui, selected_solutions_json_state, url_input], outputs=[full_ui_iframe])
             refresh_ui_btn.click(fn=poll_for_generated_ui, inputs=[rv_repo_select, session_id_ui], outputs=[full_ui_iframe])
-            ui_chat_send.click(fn=blablador_chat_adaptation, inputs=[ui_chat_msg, ui_chatbot, jules_uuid_ui], outputs=[ui_chatbot, ui_chat_msg])
+            ui_chat_send.click(fn=blablador_chat_adaptation, inputs=[ui_chat_msg, ui_chatbot, jules_uuid_ui, session_id_ui], outputs=[ui_chatbot, ui_chat_msg])
 
 
         with gr.Tab("System"):
