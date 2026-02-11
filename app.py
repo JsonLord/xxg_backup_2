@@ -10,9 +10,25 @@ import shutil
 from gradio_client import Client
 from datetime import datetime
 
-# TinyTroupe and mkslides are now pre-cloned and pre-installed in Dockerfile:
-# git clone -b fix/jules-final-submission-branch https://github.com/JsonLord/TinyTroupe.git external/TinyTroupe
-# We only keep the patching logic if needed, or ensure it's done during build
+# Startup tools setup
+def setup_tools():
+    # 1. Patch TinyTroupe
+    if os.path.exists("external/TinyTroupe"):
+        patch_tinytroupe()
+
+    # 2. Setup md2googleslides
+    gslides_path = "external/md2googleslides"
+    if not os.path.exists(gslides_path):
+        print("Cloning md2googleslides...")
+        subprocess.run(["git", "clone", "https://github.com/googleworkspace/md2googleslides.git", gslides_path])
+
+    if os.path.exists(gslides_path):
+        if not os.path.exists(os.path.join(gslides_path, "node_modules")):
+            print("Installing md2googleslides dependencies...")
+            subprocess.run(["npm", "install"], cwd=gslides_path)
+            print("Compiling md2googleslides...")
+            subprocess.run(["npm", "run", "compile"], cwd=gslides_path)
+
 def patch_tinytroupe():
     path = "external/TinyTroupe/tinytroupe/openai_utils.py"
     if os.path.exists(path):
@@ -91,8 +107,8 @@ def patch_tinytroupe():
             f.write(content)
         print("TinyTroupe patched to handle 502 errors with 35s wait and parallel retries.")
 
-if os.path.exists("external/TinyTroupe"):
-    patch_tinytroupe()
+# Run setup
+setup_tools()
 
 import gradio as gr
 from fastapi import FastAPI
@@ -720,6 +736,106 @@ def download_session_id_file(session_id):
     with open(file_path, "w") as f:
         f.write(session_id)
     return file_path
+
+def get_merged_slides_markdown(repo_full_name, branch_name, report_path):
+    if not gh: return None
+    repo = gh.get_repo(repo_full_name)
+    is_slides_dir = report_path.endswith("/slides") or report_path.endswith("/slides/") or "user_experience_reports/slides" in report_path
+
+    if is_slides_dir:
+        try:
+            folder_contents = repo.get_contents("user_experience_reports/slides", ref=branch_name)
+            slide_files = [c for c in folder_contents if c.name.endswith(".md")]
+            slide_files.sort(key=lambda x: x.name)
+            merged_content = ""
+            for i, sf in enumerate(slide_files):
+                file_data = repo.get_contents(sf.path, ref=branch_name)
+                slide_text = file_data.decoded_content.decode("utf-8")
+                if i > 0: merged_content += "\n\n---\n\n"
+                merged_content += slide_text
+            return merged_content
+        except:
+            pass
+
+    try:
+        file_content = repo.get_contents(report_path, ref=branch_name)
+        return file_content.decoded_content.decode("utf-8")
+    except:
+        return None
+
+def export_to_google_slides(session_id):
+    if not session_id:
+        return "Please enter a Session ID first."
+
+    add_log(f"Exporting slides for session {session_id} to Google Slides...")
+
+    # 1. Resolve branch
+    branches = get_repo_branches(REPO_NAME)
+    latest_branch = resolve_branch(REPO_NAME, session_id, branches)
+    if not latest_branch:
+        return f"❌ Error: Branch matching '{session_id}' not found."
+
+    # 2. Find slides content
+    slides_options = get_reports_in_branch(REPO_NAME, latest_branch, filter_type="slides")
+    if not slides_options:
+        return "❌ No slides found for this session. Ensure analysis is complete."
+
+    target_path = slides_options[0]
+    md_content = get_merged_slides_markdown(REPO_NAME, latest_branch, target_path)
+    if not md_content:
+        return "❌ Error: Could not retrieve slides Markdown content."
+
+    # 3. Configure Auth
+    home = os.path.expanduser("~")
+    config_dir = os.path.join(home, ".md2googleslides")
+    os.makedirs(config_dir, exist_ok=True)
+
+    client_id_json = os.environ.get("GOOGLE_CLIENT_ID_JSON")
+    credentials_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
+
+    if not client_id_json or not credentials_json:
+        return "❌ Error: GOOGLE_CLIENT_ID_JSON or GOOGLE_CREDENTIALS_JSON environment variables not set in secrets."
+
+    try:
+        with open(os.path.join(config_dir, "client_id.json"), "w") as f:
+            f.write(client_id_json)
+        with open(os.path.join(config_dir, "credentials.json"), "w") as f:
+            f.write(credentials_json)
+    except Exception as e:
+        return f"❌ Error configuring Google Auth: {e}"
+
+    # 4. Save MD to temp file
+    temp_md = f"temp_slides_{session_id}.md"
+    try:
+        with open(temp_md, "w") as f:
+            f.write(md_content)
+
+        # 5. Run tool
+        gslides_bin = os.path.abspath("external/md2googleslides/bin/md2gslides.js")
+        cmd = ["node", gslides_bin, os.path.abspath(temp_md), "--no-browser", "--title", f"UX Analysis: {session_id}"]
+
+        # Set environment to include node_modules
+        env = os.environ.copy()
+        env["NODE_PATH"] = os.path.abspath("external/md2googleslides/node_modules")
+
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd="external/md2googleslides", env=env)
+
+        # 6. Parse output for URL
+        output = result.stdout + result.stderr
+        url_match = re.search(r"(https://docs\.google\.com/presentation/d/[a-zA-Z0-9_-]+)", output)
+        if url_match:
+            presentation_url = url_match.group(1)
+            add_log(f"Successfully generated Google Slides: {presentation_url}")
+            return f"### ✅ Slides generated!\n\nAccess and copy your presentation here:\n{presentation_url}"
+        else:
+            add_log(f"md2gslides failed. Output: {output}")
+            return f"❌ Failed to generate slides. Output summary:\n```\n{output[-500:]}\n```"
+    except Exception as e:
+        add_log(f"Error executing md2gslides: {e}")
+        return f"❌ Error executing md2gslides: {str(e)}"
+    finally:
+        if os.path.exists(temp_md):
+            os.remove(temp_md)
 
 def find_jules_session_by_id(session_id):
     if not ANALYSIS_API_KEY or not session_id:
@@ -1543,8 +1659,11 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
 
             start_session_btn = gr.Button("Start Analysis Session", variant="primary")
             with gr.Row():
-                session_id_orch = gr.Textbox(label="Session ID (GitHub Branch Name)", interactive=True, placeholder="Enter a GitHub branch name to start analysis on...", scale=4)
+                session_id_orch = gr.Textbox(label="Session ID (GitHub Branch Name)", interactive=True, placeholder="Enter a GitHub branch name to start analysis on...", scale=3)
                 download_sid_btn = gr.Button("Download ID", scale=1)
+                export_gslides_btn = gr.Button("🚀 Export to Google Slides", scale=1, variant="secondary")
+
+            gslides_status = gr.Markdown(label="Google Slides Status")
             session_id_download_file = gr.File(label="Session ID Download", visible=False)
             session_id_sync_list.append(session_id_orch)
             report_output = gr.Markdown(label="Active Session Reports")
@@ -1916,6 +2035,12 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
     # Actually it's inside the Tab block in previous edit.
 
     # Event handlers
+    export_gslides_btn.click(
+        fn=export_to_google_slides,
+        inputs=[session_id_orch],
+        outputs=[gslides_status]
+    )
+
     download_sid_btn.click(
         fn=download_session_id_file,
         inputs=[session_id_orch],
