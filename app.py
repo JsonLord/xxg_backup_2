@@ -593,15 +593,26 @@ def generate_personas(theme, customer_profile, num_personas):
             })
     return personas_data
 
-def generate_tasks(theme, customer_profile, url):
+def generate_tasks(theme, customer_profile, url, discovery_text="", language="English"):
     client = get_blablador_client()
     if not client:
         return [f"Task {i+1} for {theme} (BLABLADOR_API_KEY not set)" for i in range(10)]
 
     prompt = f"""
-    Generate EXACTLY 10 sequential tasks for a user to perform on the website: {url}
-    The theme of the analysis is: {theme}.
-    The user persona profile is: {customer_profile}.
+    You are a UX Strategic Discovery Agent.
+
+    Target Website: {url}
+    Strategic Theme: {theme}
+    Persona Profile: {customer_profile}
+    Language: {language}
+
+    Discovery Context from Website:
+    ---
+    {discovery_text}
+    ---
+
+    Generate EXACTLY 10 sequential tasks for a user to perform on the website: {url}.
+    The tasks must be written in {language}.
 
     The tasks should cover:
     1. Communication
@@ -658,9 +669,24 @@ def generate_tasks(theme, customer_profile, url):
 
     return [f"Task {i+1} for {theme} (Manual fallback)" for i in range(10)]
 
-def handle_generate(theme, customer_profile, num_personas, method, example_file, url):
+def handle_generate(theme, customer_profile, num_personas, method, example_file, url, language):
     try:
         current_profile = customer_profile
+        discovery_text = ""
+
+        yield "Starting Strategic Discovery (Phase 1)...", None, None, None
+        try:
+            browser_client = Client("diamond-in/Browser-Use-mcp")
+            discovery_text = browser_client.predict(
+                url=url,
+                selector="body",
+                use_persistent=False,
+                api_name="/browse_and_extract"
+            )
+            add_log("Strategic Discovery complete.")
+        except Exception as e:
+            add_log(f"Strategic Discovery failed: {e}. Proceeding without discovery context.")
+
         if method == "Example Persona" and example_file:
             # Fetch example persona info to use as profile context for task generation
             ex_personas = select_or_create_personas("", "", 1, "Example Persona", example_file)
@@ -668,7 +694,7 @@ def handle_generate(theme, customer_profile, num_personas, method, example_file,
                 current_profile = ex_personas[0].get('minibio', customer_profile)
 
         yield "Thinking...", None, None, None
-        tasks = generate_tasks(theme, current_profile, url)
+        tasks = generate_tasks(theme, current_profile, url, discovery_text=discovery_text, language=language)
         tasks_text = "\n".join(tasks) if isinstance(tasks, list) else str(tasks)
 
         yield "Selecting or creating personas...", tasks_text, None, tasks
@@ -740,7 +766,7 @@ def resolve_branch(repo_name, session_id, branches):
 
     return None
 
-def start_and_monitor_sessions(personas, tasks, url, session_id):
+def start_and_monitor_sessions(personas, tasks, url, session_id, language):
     repo_name = REPO_NAME
 
     # Ticketing system: Session ID is used as the branch name for analysis
@@ -774,6 +800,7 @@ def start_and_monitor_sessions(personas, tasks, url, session_id):
         
         # Format prompt
         prompt = template.replace("{{persona_context}}", json.dumps(persona))
+        prompt = prompt.replace("{{persona_language}}", language)
         prompt = prompt.replace("{{tasks_list}}", json.dumps(tasks))
         prompt = prompt.replace("{{url}}", url)
         prompt = prompt.replace("{{report_id}}", report_id)
@@ -1053,7 +1080,7 @@ def render_slides(repo_full_name, branch_name, report_path):
         if os.path.exists(os.path.join(output_dir, "index.html")):
             # Return IFrame pointing to the static route
             add_log(f"Slides rendered successfully in {site_name}")
-            return f'<iframe src="/static_slides/{site_name}/index.html" width="100%" height="600px" frameborder="0"></iframe>'
+            return f'<iframe src="/static_slides/{site_name}/index.html" width="100%" height="800px" frameborder="0" style="min-height: 80vh;"></iframe>'
         else:
             add_log(f"ERROR: mkslides finished but index.html not found.")
             return "Failed to render slides: index.html not found."
@@ -1062,24 +1089,24 @@ def render_slides(repo_full_name, branch_name, report_path):
         print(f"Error rendering slides: {e}")
         return f"Error rendering slides: {str(e)}"
 
-def get_heatmaps_from_repo(repo_full_name, branch_name):
+def get_clickmaps_from_repo(repo_full_name, branch_name):
     if not gh or not repo_full_name or not branch_name:
         return []
     try:
         repo = gh.get_repo(repo_full_name)
-        add_log(f"Scanning branch {branch_name} for heatmaps...")
+        add_log(f"Scanning branch {branch_name} for clickmaps...")
 
-        heatmap_sources = ["user_experience_reports/images", "user_experience_reports/heatmaps"]
-        heatmaps = []
+        clickmap_sources = ["user_experience_reports/images", "user_experience_reports/clickmaps"]
+        clickmaps = []
 
-        for source in heatmap_sources:
+        for source in clickmap_sources:
             try:
                 contents = repo.get_contents(source, ref=branch_name)
                 for c in contents:
                     if c.name.endswith(".png"):
                         # Categorize by filename - Extract problem category
-                        # Expected format: heatmap_problem_category_id.png
-                        raw_name = c.name.replace(".png", "").replace("heatmap_", "")
+                        # Expected format: clickmap_problem_category_id.png
+                        raw_name = c.name.replace(".png", "").replace("clickmap_", "")
                     parts = raw_name.split("_")
                     if len(parts) > 1:
                         category = parts[0].title()
@@ -1088,16 +1115,16 @@ def get_heatmaps_from_repo(repo_full_name, branch_name):
                     else:
                         name = raw_name.replace("_", " ").title()
 
-                    if (c.download_url, name) not in heatmaps:
-                        heatmaps.append((c.download_url, name))
+                    if (c.download_url, name) not in clickmaps:
+                        clickmaps.append((c.download_url, name))
             except:
                 continue
 
         # Sort by name to group categories together
-        heatmaps.sort(key=lambda x: x[1])
-        return heatmaps
+        clickmaps.sort(key=lambda x: x[1])
+        return clickmaps
     except Exception as e:
-        add_log(f"Error fetching heatmaps: {e}")
+        add_log(f"Error fetching clickmaps: {e}")
         return []
 
 def deploy_to_hf():
@@ -1447,6 +1474,7 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
                     num_personas_input = gr.Number(label="Number of Personas", value=1, precision=0)
                     url_input = gr.Textbox(label="Target URL", value="https://example.com")
                     persona_method = gr.Radio(["Example Persona", "TinyTroupe", "DeepPersona"], label="Persona Generation Method", value="TinyTroupe")
+                    persona_language = gr.Dropdown(["English", "Spanish", "French", "German", "Chinese", "Japanese", "Russian"], label="Persona Language", value="English")
 
                     with gr.Column(visible=False) as example_persona_col:
                         gr.Markdown("#### Pre-configured Personas")
@@ -1742,23 +1770,23 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
             tl_refresh_btn.click(fn=smart_load_thoughts, inputs=[tl_repo_select, session_id_tl], outputs=[tl_branch_select, tl_log_select, tl_viewer, tl_terminal_log, jules_uuid_ui])
             tl_load_btn.click(fn=get_report_content, inputs=[tl_repo_select, tl_branch_select, tl_log_select], outputs=[tl_viewer])
 
-        with gr.Tab("Average User Journey Heatmaps"):
-            gr.Markdown("### Heatmaps")
+        with gr.Tab("Average User Journey ClickMaps"):
+            gr.Markdown("### ClickMaps")
             with gr.Row():
                 session_id_hm = gr.Textbox(label="Session ID", placeholder="Enter Session ID...")
                 session_id_sync_list.append(session_id_hm)
-            refresh_heatmaps_btn = gr.Button("Refresh Heatmaps")
-            heatmap_gallery = gr.Gallery(label="User Interaction Heatmaps", columns=2)
+            refresh_clickmaps_btn = gr.Button("Refresh ClickMaps")
+            clickmap_gallery = gr.Gallery(label="User Interaction ClickMaps", columns=2)
 
-            def smart_load_heatmaps_ui(repo, session_id):
+            def smart_load_clickmaps_ui(repo, session_id):
                 branches = get_repo_branches(repo)
                 latest = resolve_branch(repo, session_id, branches)
                 recovered_uuid = find_jules_session_by_id(session_id)
                 if not latest:
                     return [], recovered_uuid
-                return get_heatmaps_from_repo(repo, latest), recovered_uuid
+                return get_clickmaps_from_repo(repo, latest), recovered_uuid
 
-            refresh_heatmaps_btn.click(fn=smart_load_heatmaps_ui, inputs=[rv_repo_select, session_id_hm], outputs=[heatmap_gallery, jules_uuid_ui])
+            refresh_clickmaps_btn.click(fn=smart_load_clickmaps_ui, inputs=[rv_repo_select, session_id_hm], outputs=[clickmap_gallery, jules_uuid_ui])
 
         with gr.Tab("Agents.txt"):
             gr.Markdown("### Coding Agent Prompt")
@@ -1832,8 +1860,9 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
                     
                     # Use existing optimized logic
                     branches = get_repo_branches(repo_name, github_client=test_gh)
+                    latest_branch = branches[0] if branches else "None"
                     
-                    return status, {"status": "Connection established successfully", "user": user, "branches_count": len(branches)}
+                    return status, {"status": "Connection established successfully", "user": user, "latest_branch": latest_branch}
                 except Exception as e:
                     add_log(f"System Test Error: {str(e)}")
                     return f"Error: {str(e)}", {"status": "Connection failed", "error": str(e)}
@@ -1898,13 +1927,13 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
 
     generate_btn.click(
         fn=handle_generate,
-        inputs=[theme_input, profile_input, num_personas_input, persona_method, example_persona_select, url_input],
+        inputs=[theme_input, profile_input, num_personas_input, persona_method, example_persona_select, url_input, persona_language],
         outputs=[status_output, task_list_display, persona_display, last_generated_tasks_state]
     )
 
     start_session_btn.click(
         fn=start_and_monitor_sessions,
-        inputs=[persona_display, last_generated_tasks_state, url_input, session_id_orch],
+        inputs=[persona_display, last_generated_tasks_state, url_input, session_id_orch, persona_language],
         outputs=[status_output, report_output, session_id_orch, active_jules_uuid_state]
     ).then(
         fn=lambda x: [x] * len(session_id_sync_list),

@@ -14,6 +14,7 @@ You will simulate a persona performing tasks, but the final output must read lik
 ## 1. Variables
 
 - Persona: {{persona_context}}
+- Language: {{persona_language}}
 - Tasks: {{tasks_list}}
 - Target URL: {{url}}
 - Report ID: {{report_id}}
@@ -26,10 +27,10 @@ You will simulate a persona performing tasks, but the final output must read lik
 
 1. **Sequential Execution**: Perform the 10 tasks provided in `{{tasks_list}}` one by one.
 2. **Coordinate Tracking**: For every click or interaction, record the (x, y) coordinates relative to the viewport.
-3. **Heatmap Generation**: After completing all tasks, generate "Average User Journey Heatmaps" by overlaying the recorded interaction points onto screenshots of the relevant pages.
-   - Save these heatmap images as PNG files in `/user_experience_reports/images/`.
-   - Name them descriptively and include the problem category or task goal in the filename, e.g., `heatmap_navigation_friction.png`, `heatmap_purchase_confusion.png`, `average_journey_heatmap.png`.
-   - Ensure these heatmaps are categorized by the UX problems you identify later in the report.
+3. **ClickMap Generation**: After completing all tasks, generate "Average User Journey ClickMaps" by overlaying the recorded interaction points onto screenshots of the relevant pages.
+   - Save these ClickMap images as PNG files in `/user_experience_reports/images/`.
+   - Name them descriptively and include the problem category or task goal in the filename, e.g., `clickmap_navigation_friction.png`, `clickmap_purchase_confusion.png`, `average_journey_clickmap.png`.
+   - Ensure these ClickMaps are categorized by the UX problems you identify later in the report.
 4. **Thought Logs & Text Analysis**: Throughout the simulation, maintain a detailed record of your persona's internal monologue and decision-making process.
    - Save these logs to `/user_experience_reports/thought_logs/thought_log_{{report_id}}.md`.
    - Format the logs in a "nice to follow" style, using callouts or blockquotes for internal thoughts.
@@ -70,6 +71,8 @@ config_manager.update("reasoning_model", "alias-huge")
 ### Browser Control
 
 * Use ONLY browser_actions.
+* **Cookie Walls**: "Cookie Walls" block immediate user value. They are to be clicked, solved, and ignored using the `handle_cookies` file tools.
+* **Language Support**: Adapt the full output language to the chosen language: {{persona_language}}. If the website is in another language, look for translation buttons. If no translation is found and you cannot understand the content, prioritize the tasks you can perform or give up on specific tasks that require deep comprehension.
 * Navigate first to Target URL.
 * Execute ALL tasks sequentially.
 * After EACH task, append styled logs to `/user_experience_reports/report_{{report_id}}.md`.
@@ -314,7 +317,7 @@ This is not a design project.
 
 This is a revenue enablement and trust infrastructure initiative.
 
-## 30–60–90 Day Roadmap
+## Immediate-Intermediate-Long-term Adaptations
 
 Concrete actions.
 
@@ -396,7 +399,7 @@ For best rendering in the orchestrator app:
 2. **Conciseness**: Limit content to 4-6 bullet points per slide. Use bold text for key terms.
 3. **Components**:
    - Use Markdown tables for the Failure Map and Priority Matrix.
-   - Use `:::card` blocks for specific recommendations or quotes.
+   - **Slide Content**: DO NOT include `:::card` markers in the individual slide files, as they can cause rendering artifacts on slides. Use standard bullet points and bold text for emphasis.
 4. **Formatting**: Do NOT include `---` separators within these individual files. The orchestrator will automatically merge them into a single presentation.
 5. **Title Slide**: You may optionally include `00_title.md` with an `# H1` title.
 
