@@ -1684,6 +1684,9 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
             with gr.Row():
                 sl_status_display = gr.Markdown("Click 'Pull latest results' to discover slides.")
                 sl_render_all_btn = gr.Button("Start Carousel", variant="primary")
+                export_gslides_btn_carousel = gr.Button("🚀 Export to Google Slides", variant="secondary")
+
+            gslides_status_carousel = gr.Markdown(label="Google Slides Status")
 
             with gr.Row(visible=False) as carousel_controls:
                 prev_deck_btn = gr.Button("< Previous Deck")
@@ -2039,6 +2042,12 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
         fn=export_to_google_slides,
         inputs=[session_id_orch],
         outputs=[gslides_status]
+    )
+
+    export_gslides_btn_carousel.click(
+        fn=export_to_google_slides,
+        inputs=[session_id_carousel],
+        outputs=[gslides_status_carousel]
     )
 
     download_sid_btn.click(
