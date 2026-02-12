@@ -837,8 +837,8 @@ def export_to_google_slides(session_id):
         if os.path.exists(temp_md):
             os.remove(temp_md)
 
-def find_jules_session_by_id(session_id):
-    if not ANALYSIS_API_KEY or not session_id:
+def find_jules_session_by_id(search_term):
+    if not ANALYSIS_API_KEY or not search_term:
         return None
 
     headers = {
@@ -847,16 +847,31 @@ def find_jules_session_by_id(session_id):
     }
 
     try:
-        add_log(f"Searching for Jules session matching ID: {session_id}...")
+        add_log(f"Searching for Jules session matching: {search_term}...")
         response = requests.get(f"{ANALYSIS_API_URL}/sessions", headers=headers)
         if response.status_code == 200:
             sessions = response.json().get("sessions", [])
             for s in sessions:
                 title = s.get("title", "")
-                if f"({session_id})" in title or session_id in title:
+
+                # Case 1: Search term is exactly the UUID (sessions/xxx)
+                if search_term == s.get("id") or search_term == s.get("name"):
+                    return s.get("name")
+
+                # Case 2: Direct containment
+                if f"({search_term})" in title or search_term in title:
                     name = s.get("name")
-                    add_log(f"Found Jules session: {name} (Title: {title})")
+                    add_log(f"Found Jules session (Direct Match): {name} (Title: {title})")
                     return name
+
+                # Case 3: Fuzzy match - extract ID from title parentheses
+                match = re.search(r'\(([^)]+)\)', title)
+                if match:
+                    id_in_title = match.group(1)
+                    if id_in_title.lower() in search_term.lower() or search_term.lower() in id_in_title.lower():
+                        name = s.get("name")
+                        add_log(f"Found Jules session (Fuzzy Match): {name} (Title: {title})")
+                        return name
         return None
     except Exception as e:
         print(f"Error finding Jules session: {e}")
@@ -1420,18 +1435,23 @@ You are an expert Frontend Developer. Your task is to implement the following "L
 """
     return prompt
 
-def generate_full_ui_call(repo, branch, session_id, selected_solutions_json, url):
+def generate_full_ui_call(repo, branch, session_id, selected_solutions_json, url, short_session_id=None):
     if not ANALYSIS_API_KEY:
         return "Error: ANALYSIS_API_KEY missing."
 
     # Try to recover session_id (the jules uuid) if it looks like a branch name or is missing
     target_uuid = session_id
     if not target_uuid or not target_uuid.startswith("sessions/"):
-        recovered = find_jules_session_by_id(branch or session_id)
-        if recovered:
-            target_uuid = recovered
-        else:
-            return f"Error: Could not find a Jules session for ID '{session_id}' or branch '{branch}'."
+        # Try multiple fallback search terms
+        search_terms = [t for t in [session_id, branch, short_session_id] if t]
+        for term in search_terms:
+            recovered = find_jules_session_by_id(term)
+            if recovered:
+                target_uuid = recovered
+                break
+
+        if not target_uuid or not target_uuid.startswith("sessions/"):
+            return f"Error: Could not find a Jules session for ID '{session_id}', branch '{branch}', or Short ID '{short_session_id}'."
 
     try:
         if not os.path.exists("ui_generation_template.md"):
@@ -1936,7 +1956,7 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
                     ui_chat_msg = gr.Textbox(label="Request Modification", placeholder="e.g. Change primary color to emerald...")
                     ui_chat_send = gr.Button("Send Request")
 
-            generate_full_ui_btn.click(fn=generate_full_ui_call, inputs=[rv_repo_select, rv_branch_select, jules_uuid_ui, selected_solutions_json_state, url_input], outputs=[full_ui_iframe])
+            generate_full_ui_btn.click(fn=generate_full_ui_call, inputs=[rv_repo_select, rv_branch_select, jules_uuid_ui, selected_solutions_json_state, url_input, session_id_ui], outputs=[full_ui_iframe])
             refresh_ui_btn.click(fn=poll_for_generated_ui, inputs=[rv_repo_select, session_id_ui], outputs=[full_ui_iframe])
             ui_chat_send.click(fn=blablador_chat_adaptation, inputs=[ui_chat_msg, ui_chatbot, jules_uuid_ui, session_id_ui], outputs=[ui_chatbot, ui_chat_msg])
 
