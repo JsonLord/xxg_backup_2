@@ -1661,9 +1661,7 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
             with gr.Row():
                 session_id_orch = gr.Textbox(label="Session ID (GitHub Branch Name)", interactive=True, placeholder="Enter a GitHub branch name to start analysis on...", scale=3)
                 download_sid_btn = gr.Button("Download ID", scale=1)
-                export_gslides_btn = gr.Button("🚀 Export to Google Slides", scale=1, variant="secondary")
 
-            gslides_status = gr.Markdown(label="Google Slides Status")
             session_id_download_file = gr.File(label="Session ID Download", visible=False)
             session_id_sync_list.append(session_id_orch)
             report_output = gr.Markdown(label="Active Session Reports")
@@ -1684,6 +1682,9 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
             with gr.Row():
                 sl_status_display = gr.Markdown("Click 'Pull latest results' to discover slides.")
                 sl_render_all_btn = gr.Button("Start Carousel", variant="primary")
+                export_gslides_btn = gr.Button("🚀 Export to Google Slides", variant="secondary")
+
+            gslides_status = gr.Markdown(label="Google Slides Status")
 
             with gr.Row(visible=False) as carousel_controls:
                 prev_deck_btn = gr.Button("< Previous Deck")
@@ -2037,7 +2038,7 @@ with gr.Blocks(title="UX Analysis Orchestrator") as demo:
     # Event handlers
     export_gslides_btn.click(
         fn=export_to_google_slides,
-        inputs=[session_id_orch],
+        inputs=[session_id_carousel],
         outputs=[gslides_status]
     )
 
