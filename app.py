@@ -947,7 +947,7 @@ def start_and_monitor_sessions(personas, tasks, url, session_id, language):
             "sourceContext": {
                 "source": f"sources/github/{repo_name}",
                 "githubRepoContext": {
-                    "startingBranch": "main"
+                    "startingBranch": "agent-0-integration"
                 }
             },
             "automationMode": "AUTO_CREATE_PR",

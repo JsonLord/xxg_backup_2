@@ -58,7 +58,8 @@ config_manager.update("model", "alias-huge")
 
 ## 3. REPORT STRUCTURE (MANDATORY)
 
-Create `/user_experience_reports/report_{{report_id}}.md` with the following sections:
+Create `/user_experience_reports/report.md` with the following sections.
+**CRITICAL**: Do NOT generate a "project overview" file. All your findings must be contained within `/user_experience_reports/report.md`.
 
 # Usability Test Report
 
@@ -112,5 +113,5 @@ Generate individual slide files in `/user_experience_reports/slides/`.
 
 ## 5. SUBMISSION
 
-Confirm `report_{{report_id}}.md`, individual solution snippets in `/user_experience_reports/solutions/`, ClickMaps in `/user_experience_reports/images/`, and thought logs in `/user_experience_reports/thought_logs/` are written.
+Confirm `report.md`, individual solution snippets in `/user_experience_reports/solutions/`, ClickMaps in `/user_experience_reports/images/`, and thought logs in `/user_experience_reports/thought_logs/` are written.
 Session will open PR automatically.
