@@ -1329,7 +1329,7 @@ def smart_load_slides(repo_name, session_id):
     latest_branch = resolve_branch(repo_name, session_id, branches)
     recovered_uuid = find_jules_session_by_id(session_id)
     if not latest_branch:
-        return gr.update(choices=branches), None, f"Branch matching '{session_id}' not found.", f"[ERROR] Branch matching '{session_id}' not found.", recovered_uuid, [], gr.update(visible=False), 0, ""
+        return gr.update(choices=branches), None, f"[ERROR] Branch matching '{session_id}' not found.", recovered_uuid, [], gr.update(visible=False), 0, ""
 
     slides_options = get_reports_in_branch(repo_name, latest_branch, filter_type="slides")
     best_slides = None
