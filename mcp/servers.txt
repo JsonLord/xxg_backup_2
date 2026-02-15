@@ -765,16 +765,16 @@ Hugging Face logo
 Hugging Face
 
 
-Jules API
+Analysis API
 
 Authentication
 
-To get started with the Jules REST API, you’ll need an API key.
+To get started with the Analysis REST API, you’ll need an API key.
 Generate Your API Key
 
-In the Jules web app, go to the Settings page to create a new API key. You can have at most 3 API keys at a time.
+In the Analysis web app, go to the Settings page to create a new API key. You can have at most 3 API keys at a time.
 
-Jules REST API Key creation interface
+Analysis REST API Key creation interface
 Use Your API Key
 
 To authenticate your requests, pass the API key in the X-Goog-Api-Key header of your API calls.
@@ -782,19 +782,19 @@ To authenticate your requests, pass the API key in the X-Goog-Api-Key header of 
 Keep your API keys secure. Don’t share them or embed them in public code. For your protection, any API keys found to be publicly exposed will be automatically disabled to prevent abuse.
 API concepts
 
-The Jules REST API is built around a few core resources. Understanding these will help you use the API effectively.
+The Analysis REST API is built around a few core resources. Understanding these will help you use the API effectively.
 
-    Source — An input source for the agent (e.g., a GitHub repository). Before using a source using the API, you must first install the Jules GitHub app through the Jules web app.
+    Source — An input source for the agent (e.g., a GitHub repository). Before using a source using the API, you must first install the Analysis GitHub app through the Analysis web app.
     Session — A continuous unit of work within a specific context, similar to a chat session. A session is initiated with a prompt and a source.
     Activity — A single unit of work within a Session. A Session contains multiple activities from both the user and the agent, such as generating a plan, sending a message, or updating progress.
 
 Your first API call
 
-We’ll walk through creating your first session with the Jules REST API using curl.
+We’ll walk through creating your first session with the Analysis REST API using curl.
 
     List your available sources
 
-First, you need to find the name of the source you want to work with (e.g., your GitHub repo). This command will return a list of all sources you have connected to Jules.
+First, you need to find the name of the source you want to work with (e.g., your GitHub repo). This command will return a list of all sources you have connected to Analysis.
 
 curl -H "x-goog-api-key: $JULES_API_KEY" \
   https://jules.googleapis.com/v1alpha/sources
@@ -817,7 +817,7 @@ The response will look something like this:
 
 Create a new session
 
-Now, create a new session. You’ll need the source name from the previous step. This request tells Jules to create a boba app in the specified repository.
+Now, create a new session. You’ll need the source name from the previous step. This request tells Analysis to create a boba app in the specified repository.
 
 curl 'https://jules.googleapis.com/v1alpha/sessions' \
   -X POST \
@@ -915,7 +915,7 @@ The response will be empty because the agent will send its response in the next 
 
 Sessions
 
-Sessions are the core resource in the Jules REST API. A session represents a unit of work where Jules executes a coding task on your repository.
+Sessions are the core resource in the Analysis REST API. A session represents a unit of work where Analysis executes a coding task on your repository.
 Create a Session
 POST
 /v1alpha/sessions
@@ -925,7 +925,7 @@ Request Body
 prompt
 required string
 
-The task description for Jules to execute.
+The task description for Analysis to execute.
 title
 string
 
@@ -1078,7 +1078,7 @@ POST
 
 Sends a message from the user to an active session.
 
-Use this endpoint to provide feedback, answer questions, or give additional instructions to Jules during an active session.
+Use this endpoint to provide feedback, answer questions, or give additional instructions to Analysis during an active session.
 Path Parameters
 session
 required string path
@@ -1134,10 +1134,10 @@ Session States
 Sessions progress through the following states:
 State	Description
 QUEUED	Session is waiting to be processed
-PLANNING	Jules is analyzing the task and creating a plan
+PLANNING	Analysis is analyzing the task and creating a plan
 AWAITING_PLAN_APPROVAL	Plan is ready and waiting for user approval
-AWAITING_USER_FEEDBACK	Jules needs additional input from the user
-IN_PROGRESS	Jules is actively working on the task
+AWAITING_USER_FEEDBACK	Analysis needs additional input from the user
+IN_PROGRESS	Analysis is actively working on the task
 PAUSED	Session is paused
 COMPLETED	Task completed successfully
 FAILED	Task failed to complete
@@ -1262,7 +1262,7 @@ Activity Types
 Activities have different types based on what occurred. Each activity will have exactly one of these event fields populated:
 Plan Generated
 
-Indicates Jules has created a plan for the task:
+Indicates Analysis has created a plan for the task:
 
 {
   "planGenerated": {
@@ -1298,7 +1298,7 @@ A message from the user:
 
 Agent Messaged
 
-A message from Jules:
+A message from Analysis:
 
 {
   "agentMessaged": {
@@ -1384,9 +1384,9 @@ Media
 
 Sources
 
-Sources represent repositories connected to Jules. Currently, Jules supports GitHub repositories. Use the Sources API to list available repositories and get details about specific sources.
+Sources represent repositories connected to Analysis. Currently, Analysis supports GitHub repositories. Use the Sources API to list available repositories and get details about specific sources.
 
-Sources are created when you connect a GitHub repository to Jules through the web interface. The API currently only supports reading sources, not creating them.
+Sources are created when you connect a GitHub repository to Analysis through the web interface. The API currently only supports reading sources, not creating them.
 List Sources
 GET
 /v1alpha/sources
@@ -1527,11 +1527,11 @@ Next
 Types 
 
 
-This page documents all data types used in the Jules REST API.
+This page documents all data types used in the Analysis REST API.
 Core Resources
 Session
 
-A session represents a unit of work where Jules executes a coding task.
+A session represents a unit of work where Analysis executes a coding task.
 Session
 
 A session is a contiguous amount of work within the same context.
@@ -1546,7 +1546,7 @@ Output only. The session ID.
 prompt
 required string
 
-The task description for Jules to execute.
+The task description for Analysis to execute.
 title
 string
 
@@ -1558,7 +1558,7 @@ Output only. Current state of the session.
 url
 string
 
-Output only. URL to view the session in the Jules web app.
+Output only. URL to view the session in the Analysis web app.
 sourceContext
 required SourceContext
 
@@ -1589,10 +1589,10 @@ Enum representing the current state of a session:
 Value	Description
 STATE_UNSPECIFIED	State is unspecified
 QUEUED	Session is waiting to be processed
-PLANNING	Jules is creating a plan
+PLANNING	Analysis is creating a plan
 AWAITING_PLAN_APPROVAL	Plan is ready for user approval
-AWAITING_USER_FEEDBACK	Jules needs user input
-IN_PROGRESS	Jules is actively working
+AWAITING_USER_FEEDBACK	Analysis needs user input
+IN_PROGRESS	Analysis is actively working
 PAUSED	Session is paused
 FAILED	Session failed
 COMPLETED	Session completed successfully
@@ -1647,7 +1647,7 @@ The user posted a message.
 agentMessaged
 AgentMessaged
 
-Jules posted a message.
+Analysis posted a message.
 progressUpdated
 ProgressUpdated
 
@@ -1682,7 +1682,7 @@ Plans
 Plan
 Plan
 
-A sequence of steps that Jules will take to complete the task.
+A sequence of steps that Analysis will take to complete the task.
 id
 string
 
@@ -1895,7 +1895,7 @@ The message content.
 AgentMessaged
 AgentMessaged
 
-Jules posted a message.
+Analysis posted a message.
 agentMessage
 string
 

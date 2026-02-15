@@ -10,20 +10,9 @@ import shutil
 from gradio_client import Client
 from datetime import datetime
 
-# Logic to clone TinyTroupe on startup if not present
-def clone_tinytroupe():
-    if not os.path.exists("external/TinyTroupe"):
-        print("Cloning TinyTroupe...")
-        os.makedirs("external", exist_ok=True)
-        subprocess.run([
-            "git", "clone", "-b", "fix/jules-final-submission-branch",
-            "https://github.com/JsonLord/TinyTroupe.git", "external/TinyTroupe"
-        ])
-        patch_tinytroupe()
-    else:
-        print("TinyTroupe already present.")
-        patch_tinytroupe()
-
+# TinyTroupe and mkslides are now pre-cloned and pre-installed in Dockerfile:
+# git clone -b fix/jules-final-submission-branch https://github.com/JsonLord/TinyTroupe.git external/TinyTroupe
+# We only keep the patching logic if needed, or ensure it's done during build
 def patch_tinytroupe():
     path = "external/TinyTroupe/tinytroupe/openai_utils.py"
     if os.path.exists(path):
@@ -100,33 +89,14 @@ def patch_tinytroupe():
             f.write(content)
         print("TinyTroupe patched to handle 502 errors with 35s wait and parallel retries.")
 
-clone_tinytroupe()
-
-def setup_mkslides():
-    if not os.path.exists("external/mkslides"):
-        print("Cloning mkslides...")
-        os.makedirs("external", exist_ok=True)
-        subprocess.run([
-            "git", "clone", "--recursive",
-            "https://github.com/MartenBE/mkslides.git", "external/mkslides"
-        ])
-        # Patch pyproject.toml to allow Python 3.12
-        pyproject_path = "external/mkslides/pyproject.toml"
-        if os.path.exists(pyproject_path):
-            with open(pyproject_path, "r") as f:
-                content = f.read()
-            content = content.replace('requires-python = ">=3.13"', 'requires-python = ">=3.12"')
-            with open(pyproject_path, "w") as f:
-                f.write(content)
-        
-        # Install dependencies and mkslides
-        subprocess.run(["pip", "install", "./external/mkslides"])
-    else:
-        print("mkslides already present.")
-
-setup_mkslides()
+if os.path.exists("external/TinyTroupe"):
+    patch_tinytroupe()
 
 import gradio as gr
+from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+import uvicorn
 from github import Github, Auth
 import requests
 from openai import OpenAI
@@ -147,11 +117,11 @@ except ImportError as e:
     print(f"Error importing TinyTroupe: {e}")
 
 # Configuration from environment variables
-GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN") or os.environ.get("GITHUB_API_TOKEN")
-JULES_API_KEY = os.environ.get("JULES_API_KEY")
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN") or os.environ.get("GITHUB_API_TOKEN") or os.environ.get("GITHUB_API_KEY")
+ANALYSIS_API_KEY = os.environ.get("ANALYSIS_API_KEY") or os.environ.get("JULES_API_KEY")
 BLABLADOR_API_KEY = os.environ.get("BLABLADOR_API_KEY")
 BLABLADOR_BASE_URL = "https://api.helmholtz-blablador.fz-juelich.de/v1"
-JULES_API_URL = "https://jules.googleapis.com/v1alpha"
+ANALYSIS_API_URL = "https://jules.googleapis.com/v1alpha"
 
 # GitHub Client
 gh = Github(auth=Auth.Token(GITHUB_TOKEN)) if GITHUB_TOKEN else None
@@ -163,6 +133,10 @@ POOL_PATH = "PersonaPool"
 processed_prs = set()
 all_discovered_reports = ""
 github_logs = []
+
+# Slide rendering configuration
+SLIDES_OUTPUT_ROOT = os.path.join(os.getcwd(), "rendered_slides_output")
+os.makedirs(SLIDES_OUTPUT_ROOT, exist_ok=True)
 
 def add_log(message):
     timestamp = datetime.now().strftime("%H:%M:%S")
@@ -603,11 +577,11 @@ def start_and_monitor_sessions(personas, tasks, url):
     repo_name = "JsonLord/tiny_web"
     branch_name = "main"
 
-    if not JULES_API_KEY:
-        yield "Error: JULES_API_KEY not set.", ""
+    if not ANALYSIS_API_KEY:
+        yield "Error: Analysis API key not set.", ""
         return
 
-    with open("jules_template.md", "r") as f:
+    with open("analysis_template.md", "r") as f:
         template = f.read()
 
     sessions = []
@@ -622,9 +596,9 @@ def start_and_monitor_sessions(personas, tasks, url):
         prompt = prompt.replace("{{report_id}}", report_id)
         prompt = prompt.replace("{{blablador_api_key}}", BLABLADOR_API_KEY if BLABLADOR_API_KEY else "YOUR_API_KEY")
 
-        # Call Jules API
+        # Call Analysis API
         headers = {
-            "X-Goog-Api-Key": JULES_API_KEY,
+            "X-Goog-Api-Key": ANALYSIS_API_KEY,
             "Content-Type": "application/json"
         }
         data = {
@@ -639,7 +613,7 @@ def start_and_monitor_sessions(personas, tasks, url):
             "title": f"UX Analysis for {persona['name']}"
         }
 
-        response = requests.post(f"{JULES_API_URL}/sessions", headers=headers, json=data)
+        response = requests.post(f"{ANALYSIS_API_URL}/sessions", headers=headers, json=data)
         if response.status_code == 200:
             sessions.append(response.json())
         else:
@@ -651,7 +625,7 @@ def start_and_monitor_sessions(personas, tasks, url):
     while sessions:
         for i, session in enumerate(sessions):
             session_id = session['id']
-            res = requests.get(f"{JULES_API_URL}/sessions/{session_id}", headers=headers)
+            res = requests.get(f"{ANALYSIS_API_URL}/sessions/{session_id}", headers=headers)
             if res.status_code == 200:
                 current_session = res.json()
                 yield f"Monitoring sessions... Status of {current_session.get('title')}: {current_session.get('state', 'UNKNOWN')}", all_reports
@@ -685,10 +659,20 @@ def get_reports_in_branch(repo_full_name, branch_name, filter_type=None):
         repo = gh.get_repo(repo_full_name)
         add_log(f"Scanning branch {branch_name} for reports (filter: {filter_type})...")
         
-        exclude_files = {"jules_template.md", "readme.md", "contributing.md", "license.md"}
+        exclude_files = {"analysis_template.md", "readme.md", "contributing.md", "license.md"}
         
         # Method 1: Check user_experience_reports directory
         reports = []
+
+        # Check for merged slides folder first if we are looking for slides
+        if filter_type == "slides":
+            try:
+                repo.get_contents("user_experience_reports/slides", ref=branch_name)
+                reports.append("user_experience_reports/slides")
+                add_log("Detected 'user_experience_reports/slides' directory. Added as merged presentation option.")
+            except:
+                pass
+
         try:
             contents = repo.get_contents("user_experience_reports", ref=branch_name)
             for content_file in contents:
@@ -723,6 +707,12 @@ def get_reports_in_branch(repo_full_name, branch_name, filter_type=None):
                 if path not in reports:
                     reports.append(path)
         
+        # Filter out individual slides if they are inside a slides folder
+        if filter_type == "slides":
+            folders = [r for r in reports if not r.endswith(".md")]
+            if folders:
+                reports = [r for r in reports if not any(r.startswith(f + "/") for f in folders)]
+
         # Sort by relevance
         def sort_key(path):
             p_lower = path.lower()
@@ -730,6 +720,7 @@ def get_reports_in_branch(repo_full_name, branch_name, filter_type=None):
             # Highest priority: specific report.md and slides.md in user_experience_reports
             if filter_type == "report" and p_lower == "user_experience_reports/report.md": score -= 1000
             if filter_type == "slides" and p_lower == "user_experience_reports/slides.md": score -= 1000
+            if filter_type == "slides" and p_lower == "user_experience_reports/slides": score -= 2000
             
             # High priority: other files in user_experience_reports
             if "user_experience_reports" in p_lower: score -= 100
@@ -744,7 +735,7 @@ def get_reports_in_branch(repo_full_name, branch_name, filter_type=None):
 
         reports.sort(key=sort_key)
         
-        add_log(f"Discovered {len(reports)} potential Markdown files.")
+        add_log(f"Discovered {len(reports)} entries.")
         return reports
     except Exception as e:
         add_log(f"Error fetching reports in branch {branch_name}: {e}")
@@ -816,14 +807,15 @@ def render_slides(repo_full_name, branch_name, report_path):
         repo = gh.get_repo(repo_full_name)
         content = None
         
-        # Method 1: Check for multi-file slides folder
-        # We check this first if the report_path is in user_experience_reports or if it's default
-        if "user_experience_reports" in report_path:
-            slides_folder = "user_experience_reports/slides"
+        # Check if the path is a directory or points to a slide folder
+        is_slides_dir = report_path.endswith("/slides") or report_path.endswith("/slides/")
+
+        if is_slides_dir or "user_experience_reports/slides" in report_path:
+            slides_folder = report_path if is_slides_dir else "user_experience_reports/slides"
             try:
                 folder_contents = repo.get_contents(slides_folder, ref=branch_name)
                 if isinstance(folder_contents, list):
-                    add_log(f"Multi-file slides folder found in branch {branch_name}. Merging...")
+                    add_log(f"Merging multi-file slides from {slides_folder} in branch {branch_name}...")
                     slide_files = [c for c in folder_contents if c.name.endswith(".md")]
                     slide_files.sort(key=lambda x: x.name)
                     
@@ -837,65 +829,41 @@ def render_slides(repo_full_name, branch_name, report_path):
                     
                     content = merged_content
                     add_log(f"Successfully merged {len(slide_files)} slides.")
-            except:
-                pass
+            except Exception as e:
+                add_log(f"Failed to fetch slides from folder: {e}")
 
         if content is None:
-            # Method 2: Single file logic (legacy/fallback)
-            # Determine slides path
-            if "slide" in report_path.lower():
-                slides_path = report_path
-            elif report_path == "user_experience_reports/report.md":
-                slides_path = "user_experience_reports/slides.md"
-            else:
-                # Try to map report_ID.md to slides_ID.md
-                slides_path = report_path.replace("report_", "slides_")
-                if slides_path == report_path: # No replacement happened
-                     slides_path = "user_experience_reports/slides.md" # fallback
-
-            add_log(f"Attempting to fetch single-file slides from branch '{branch_name}' at path: {slides_path}")
-
+            # Fallback to single file logic
+            add_log(f"Attempting to fetch single-file slides from branch '{branch_name}' at path: {report_path}")
             try:
-                file_content = repo.get_contents(slides_path, ref=branch_name)
+                file_content = repo.get_contents(report_path, ref=branch_name)
                 content = file_content.decoded_content.decode("utf-8")
             except Exception as e:
-                if "404" in str(e):
-                    add_log(f"Slides file not found at {slides_path}. Attempting fallback...")
-                    # Last resort fallback: look for any .md file with 'slides' in the name in the same branch
-                    reports = get_reports_in_branch(repo_full_name, branch_name)
-                    slides_files = [r for r in reports if "slide" in r.lower() and "/slides/" not in r]
-                    if slides_files:
-                        slides_path = slides_files[0]
-                        add_log(f"Found alternative slides file: {slides_path}")
-                        file_content = repo.get_contents(slides_path, ref=branch_name)
-                        content = file_content.decoded_content.decode("utf-8")
-                    else:
-                        return f"Error: File '{slides_path}' not found in branch '{branch_name}'. No other slide files discovered."
-                else:
-                    add_log(f"Error fetching slides: {e}")
-                    return f"Error fetching slides: {str(e)}"
+                return f"Error fetching slides: {str(e)}"
             
-        # Prepare workspace
-        report_id = str(uuid.uuid4())[:8]
-        work_dir = f"slides_work_{report_id}"
+        # Generate a unique ID for this rendering
+        render_id = str(uuid.uuid4())[:8]
+        work_dir = f"slides_work_{render_id}"
         os.makedirs(work_dir, exist_ok=True)
-        with open(f"{work_dir}/index.md", "w") as f:
+        with open(os.path.join(work_dir, "index.md"), "w") as f:
             f.write(content)
         
-        # Run mkslides
-        output_dir = f"slides_site_{report_id}"
-        # Ensure we have a clean output dir
-        if os.path.exists(output_dir):
-            shutil.rmtree(output_dir)
+        # Set output directory in the SLIDES_OUTPUT_ROOT
+        site_name = f"site_{render_id}"
+        output_dir = os.path.join(SLIDES_OUTPUT_ROOT, site_name)
             
         subprocess.run(["mkslides", "build", work_dir, "--site-dir", output_dir])
         
-        if os.path.exists(f"{output_dir}/index.html"):
-            # Return IFrame pointing to the generated site. 
-            # We use /file= prefix which Gradio uses to serve files in allowed_paths.
-            return f'<iframe src="/file={os.path.abspath(output_dir)}/index.html" width="100%" height="600px"></iframe>'
+        # Cleanup work dir
+        shutil.rmtree(work_dir)
+
+        if os.path.exists(os.path.join(output_dir, "index.html")):
+            # Return IFrame pointing to the static route
+            add_log(f"Slides rendered successfully in {site_name}")
+            return f'<iframe src="/static_slides/{site_name}/index.html" width="100%" height="600px" frameborder="0"></iframe>'
         else:
-            return "Failed to render slides."
+            add_log(f"ERROR: mkslides finished but index.html not found.")
+            return "Failed to render slides: index.html not found."
             
     except Exception as e:
         print(f"Error rendering slides: {e}")
@@ -937,12 +905,12 @@ def monitor_repo_for_reports():
         return all_discovered_reports
 
 # Gradio UI
-with gr.Blocks() as demo:
-    gr.Markdown("# Jules UX Analysis Orchestrator")
+with gr.Blocks(title="UX Analysis Orchestrator") as demo:
+    gr.Markdown("# UX Analysis Orchestrator")
 
     with gr.Tabs():
-        with gr.Tab("Orchestrator"):
-            gr.Markdown("### Start New Jules Sessions")
+        with gr.Tab("Analysis Orchestrator"):
+            gr.Markdown("### Start New Analysis Sessions")
             with gr.Row():
                 with gr.Column():
                     theme_input = gr.Textbox(label="Theme", placeholder="e.g., Communication, Purchase decisions, Information gathering")
@@ -956,7 +924,7 @@ with gr.Blocks() as demo:
                     task_list_display = gr.JSON(label="Tasks")
                     persona_display = gr.JSON(label="Personas")
 
-            start_session_btn = gr.Button("Start Jules Session", variant="primary")
+            start_session_btn = gr.Button("Start Analysis Session", variant="primary")
             report_output = gr.Markdown(label="Active Session Reports")
 
         with gr.Tab("Report Viewer"):
@@ -992,7 +960,7 @@ with gr.Blocks() as demo:
             rv_branch_select.change(fn=rv_update_reports, inputs=[rv_repo_select, rv_branch_select], outputs=[rv_report_select])
             rv_load_report_btn.click(fn=rv_load_wrapper, inputs=[rv_repo_select, rv_branch_select, rv_report_select, rv_manual_path], outputs=[rv_report_viewer])
 
-        with gr.Tab("Slideshow"):
+        with gr.Tab("Presentation Carousel"):
             gr.Markdown("### View Presentation Slides")
             with gr.Row():
                 sl_repo_select = gr.Dropdown(label="Repository", choices=get_user_repos(), value=REPO_NAME)
@@ -1000,30 +968,82 @@ with gr.Blocks() as demo:
                 sl_refresh_branches_btn = gr.Button("Refresh Branches")
             
             with gr.Row():
-                sl_report_select = gr.Dropdown(label="Select Report/Slides File", choices=[], allow_custom_value=True)
-                sl_render_btn = gr.Button("Render Slideshow")
-            
-            sl_manual_path = gr.Textbox(label="Or enter manual path (e.g. docs/slides.md)", placeholder="docs/slides.md")
+                sl_status_display = gr.Markdown("Select a branch to discover slides.")
+                sl_render_all_btn = gr.Button("Start Carousel", variant="primary")
+
+            with gr.Row(visible=False) as carousel_controls:
+                prev_deck_btn = gr.Button("< Previous Deck")
+                deck_counter = gr.Markdown("Deck 0 of 0")
+                next_deck_btn = gr.Button("Next Deck >")
 
             slideshow_display = gr.HTML(label="Slideshow")
+
+            all_decks_state = gr.State([])
+            current_deck_idx = gr.State(0)
 
             def sl_update_branches(repo_name):
                 branches = get_repo_branches(repo_name)
                 latest = branches[0] if branches else "main"
                 return gr.update(choices=branches, value=latest)
 
-            def sl_update_reports(repo_name, branch_name):
-                reports = get_reports_in_branch(repo_name, branch_name, filter_type="slides")
-                return gr.update(choices=reports, value=reports[0] if reports else None)
+            def sl_auto_render(repo, branch):
+                reports = get_reports_in_branch(repo, branch, filter_type="slides")
+                default_val = None
+                # Prioritize the standard slides folder
+                if "user_experience_reports/slides" in reports:
+                    default_val = "user_experience_reports/slides"
+                elif reports:
+                    default_val = reports[0]
+
+                html = ""
+                carousel_visible = gr.update(visible=False)
+                status_text = "No slide decks discovered."
+                counter_text = ""
+                idx = 0
+
+                if default_val:
+                    html = render_slides(repo, branch, default_val)
+                    status_text = f"✅ Found and loaded slides folder: `{default_val}`"
+                    if len(reports) > 1:
+                        carousel_visible = gr.update(visible=True)
+                        counter_text = f"Deck 1 of {len(reports)}: {default_val}"
+
+                return status_text, reports, html, carousel_visible, idx, counter_text
 
             sl_repo_select.change(fn=sl_update_branches, inputs=[sl_repo_select], outputs=[sl_branch_select])
-            def sl_render_wrapper(repo, branch, selected, manual):
-                path = manual if manual else selected
-                return render_slides(repo, branch, path)
+
+            def start_carousel(repo, branch, decks):
+                if not decks:
+                    return "No slide decks found.", gr.update(visible=False), 0, "No decks."
+
+                # Render first deck
+                html = render_slides(repo, branch, decks[0])
+                counter_text = f"Deck 1 of {len(decks)}: {decks[0]}"
+                return html, gr.update(visible=True), 0, counter_text
+
+            def navigate_carousel(repo, branch, decks, current_idx, direction):
+                if not decks: return "", 0, "No decks."
+                new_idx = (current_idx + direction) % len(decks)
+                html = render_slides(repo, branch, decks[new_idx])
+                counter_text = f"Deck {new_idx + 1} of {len(decks)}: {decks[new_idx]}"
+                return html, new_idx, counter_text
 
             sl_refresh_branches_btn.click(fn=sl_update_branches, inputs=[sl_repo_select], outputs=[sl_branch_select])
-            sl_branch_select.change(fn=sl_update_reports, inputs=[sl_repo_select, sl_branch_select], outputs=[sl_report_select])
-            sl_render_btn.click(fn=sl_render_wrapper, inputs=[sl_repo_select, sl_branch_select, sl_report_select, sl_manual_path], outputs=[slideshow_display])
+
+            sl_branch_select.change(
+                fn=sl_auto_render,
+                inputs=[sl_repo_select, sl_branch_select],
+                outputs=[sl_status_display, all_decks_state, slideshow_display, carousel_controls, current_deck_idx, deck_counter]
+            )
+
+            sl_render_all_btn.click(fn=start_carousel, inputs=[sl_repo_select, sl_branch_select, all_decks_state], outputs=[slideshow_display, carousel_controls, current_deck_idx, deck_counter])
+
+            # Use small helper components for navigation direction
+            prev_val = gr.Number(-1, visible=False)
+            next_val = gr.Number(1, visible=False)
+
+            prev_deck_btn.click(fn=navigate_carousel, inputs=[sl_repo_select, sl_branch_select, all_decks_state, current_deck_idx, prev_val], outputs=[slideshow_display, current_deck_idx, deck_counter])
+            next_deck_btn.click(fn=navigate_carousel, inputs=[sl_repo_select, sl_branch_select, all_decks_state, current_deck_idx, next_val], outputs=[slideshow_display, current_deck_idx, deck_counter])
 
         with gr.Tab("System"):
             gr.Markdown("### System Diagnostics & Manual Connection")
@@ -1085,6 +1105,10 @@ with gr.Blocks() as demo:
             timer.tick(fn=monitor_and_log, outputs=[global_feed, live_log])
             refresh_feed_btn.click(fn=monitor_and_log, outputs=[global_feed, live_log])
 
+        with gr.Tab("Alternative Styling"):
+            gr.Markdown("### Design Automation & Iteration")
+            gr.Markdown("We are working with the team behind https://github.com/onlook-dev/onlook to automate fast design iterations based on the user test reports. Stay updated on changes to the Github Page by following it.")
+
     # Event handlers
     generate_btn.click(
         fn=handle_generate,
@@ -1124,5 +1148,23 @@ if __name__ == "__main__":
             print(f"ERROR: GitHub connectivity test failed: {startup_err}")
     print("-----------------------------------------")
 
-    # Allow current directory for file serving, specifically for slides_site_*
-    demo.launch(allowed_paths=[os.getcwd()])
+    # Wrap with FastAPI for health check and API endpoints
+    fastapi_app = FastAPI()
+
+    @fastapi_app.get("/health")
+    def health():
+        return {"status": "ok"}
+
+    @fastapi_app.get("/api/info")
+    def info():
+        return {"app": "UX Analysis Orchestrator", "version": "1.0.0"}
+
+    # Mount static files for slides
+    fastapi_app.mount("/static_slides", StaticFiles(directory=SLIDES_OUTPUT_ROOT), name="static_slides")
+
+    # Mount Gradio
+    # Restrict allowed_paths for better security
+    demo_app = gr.mount_gradio_app(fastapi_app, demo, path="/", allowed_paths=["/app"])
+
+    # Run uvicorn
+    uvicorn.run(demo_app, host="0.0.0.0", port=7860)
