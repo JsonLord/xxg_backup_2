@@ -612,7 +612,7 @@ def generate_personas(theme, customer_profile, num_personas):
 def generate_tasks(theme, customer_profile, url, discovery_text="", language="English"):
     client = get_blablador_client()
     if not client:
-        return [f"Task {i+1} for {theme} (BLABLADOR_API_KEY not set)" for i in range(10)]
+        return [f"Task {i+1} for {theme} (BLABLADOR_API_KEY not set)" for i in range(5)]
 
     prompt = f"""
     You are a UX Strategic Discovery Agent.
@@ -627,7 +627,7 @@ def generate_tasks(theme, customer_profile, url, discovery_text="", language="En
     {discovery_text}
     ---
 
-    Generate EXACTLY 10 sequential tasks for a user to perform on the website: {url}.
+    Generate EXACTLY 5 sequential tasks for a user to perform on the website: {url}.
     The tasks must be written in {language}.
 
     The tasks should cover:
@@ -638,8 +638,8 @@ def generate_tasks(theme, customer_profile, url, discovery_text="", language="En
 
     The tasks must be in sequential order and specific to the website {url}.
 
-    CRITICAL: Skip all internal monologue or thinking process. Return ONLY a JSON object with a "tasks" key containing a list of exactly 10 strings.
-    Example: {{"tasks": ["task 1", "task 2", ..., "task 10"]}}
+    CRITICAL: Skip all internal monologue or thinking process. Return ONLY a JSON object with a "tasks" key containing a list of exactly 5 strings.
+    Example: {{"tasks": ["task 1", "task 2", "task 3", "task 4", "task 5"]}}
     Do not include any other text in your response.
     """
 
@@ -662,28 +662,32 @@ def generate_tasks(theme, customer_profile, url, discovery_text="", language="En
 
             if response and not isinstance(response, Exception):
                 content = response.choices[0].message.content
+
+                # Explicitly strip <think> blocks if they are present
+                content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL).strip()
+
                 # Robust extraction
                 json_match = re.search(r"\{.*\}", content, re.DOTALL)
                 if json_match:
                     try:
                         tasks_json = json.loads(json_match.group())
                         tasks = tasks_json.get("tasks", [])
-                        if tasks and isinstance(tasks, list) and len(tasks) >= 5:
-                            return tasks[:10]
+                        if tasks and isinstance(tasks, list) and len(tasks) >= 3:
+                            return tasks[:5]
                     except:
                         pass
 
                 # Fallback: try to extract lines that look like tasks
                 lines = [re.sub(r'^\d+[\.\)]\s*', '', l).strip() for l in content.split('\n') if l.strip()]
                 tasks = [l for l in lines if len(l) > 20 and not l.startswith('{') and not l.startswith('`')]
-                if len(tasks) >= 5:
-                    return tasks[:10]
+                if len(tasks) >= 3:
+                    return tasks[:5]
 
             print(f"Attempt {attempt+1} failed to yield valid tasks.")
         except Exception as e:
             print(f"Error in attempt {attempt+1}: {e}")
 
-    return [f"Task {i+1} for {theme} (Manual fallback)" for i in range(10)]
+    return [f"Task {i+1} for {theme} (Manual fallback)" for i in range(5)]
 
 def handle_generate(theme, customer_profile, num_personas, method, example_file, url, language):
     try:
@@ -1329,7 +1333,7 @@ def smart_load_slides(repo_name, session_id):
     latest_branch = resolve_branch(repo_name, session_id, branches)
     recovered_uuid = find_jules_session_by_id(session_id)
     if not latest_branch:
-        return gr.update(choices=branches), None, f"Branch matching '{session_id}' not found.", f"[ERROR] Branch matching '{session_id}' not found.", recovered_uuid, [], gr.update(visible=False), 0, ""
+        return gr.update(choices=branches), None, f"[ERROR] Branch matching '{session_id}' not found.", recovered_uuid, [], gr.update(visible=False), 0, ""
 
     slides_options = get_reports_in_branch(repo_name, latest_branch, filter_type="slides")
     best_slides = None
